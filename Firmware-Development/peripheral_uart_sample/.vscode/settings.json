@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "uart.h": "c",
+        "random": "c",
+        "*.tcc": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c"
+    }
+}

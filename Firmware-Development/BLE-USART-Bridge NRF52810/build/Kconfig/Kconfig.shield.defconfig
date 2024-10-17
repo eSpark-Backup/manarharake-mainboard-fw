@@ -1,0 +1,3 @@
+osource "c:/Users/Abeer.DESKTOP-Q8FRVD0/NrF/peripheral_uart1/boards/shields/*/Kconfig.defconfig"
+osource "c:/Users/Abeer.DESKTOP-Q8FRVD0/NrF/ble_uart_example/boards/shields/*/Kconfig.defconfig"
+osource "C:/ncs/v2.1.0/nrf/boards/shields/*/Kconfig.defconfig"
