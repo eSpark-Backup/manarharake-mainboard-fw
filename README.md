@@ -1,2 +1,2 @@
-# manarharake-mainboard-fw
-ManarHarake-sEMGDevice Firmware
+# Gesture Controlled Device
+#### Client Name: Manar Harake (Adstrum Inc.)
