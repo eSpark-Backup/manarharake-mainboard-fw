@@ -1,0 +1,13 @@
+.vscode
+build
+
+# ====================================================== ADD INGORE DIRECTORY IN THIS MAIN .gitignore ====================================================== #
+
+## IGNORE ESP32 IGNORE FOLDER
+
+## IGNORE ARDUINO IGNORE FOLDER
+
+## IGNORE NRF-CONNECT IGNORE FOLDER
+
+## IGNORE MICROCHIP IGNORE FOLDER
+debug
