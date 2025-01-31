@@ -39,9 +39,10 @@
           <option id="common.services.usb.class.device" value="Add" config="cdc" content-id="Atmel.ASF" />
           <option id="sam.drivers.adc" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.pio" value="Add" config="" content-id="Atmel.ASF" />
+          <option id="sam.drivers.tc.appnote" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.twi" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.drivers.wdt" value="Add" config="" content-id="Atmel.ASF" />
-          <option id="sam.drivers.tc.appnote" value="Add" config="" content-id="Atmel.ASF" />
+          <option id="sam.drivers.pdc" value="Add" config="" content-id="Atmel.ASF" />
           <option id="sam.utils.linker_scripts#atsam4s8" value="Add" config="" content-id="Atmel.ASF" />
         </options>
         <configurations>
@@ -246,6 +247,9 @@
           <file path="src/ASF/sam/drivers/tc/tc.h" framework="" version="3.52.0" source="sam\drivers\tc\tc.h" changed="False" content-id="Atmel.ASF" />
           <file path="src/ASF/sam/drivers/tc/tc_capture_waveform_example/tc_capture_waveform_example.h" framework="" version="3.52.0" source="sam\drivers\tc\tc_capture_waveform_example\tc_capture_waveform_example.h" changed="False" content-id="Atmel.ASF" />
           <file path="src/ASF/sam/drivers/tc/tc.c" framework="" version="3.52.0" source="sam\drivers\tc\tc.c" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/drivers/pdc/pdc_uart_example/pdc_uart_example.h" framework="" version="3.52.0" source="sam\drivers\pdc\pdc_uart_example\pdc_uart_example.h" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/drivers/pdc/pdc.c" framework="" version="3.52.0" source="sam\drivers\pdc\pdc.c" changed="False" content-id="Atmel.ASF" />
+          <file path="src/ASF/sam/drivers/pdc/pdc.h" framework="" version="3.52.0" source="sam\drivers\pdc\pdc.h" changed="False" content-id="Atmel.ASF" />
         </files>
         <documentation help="https://asf.microchip.com/docs/3.52.0/common.applications.user_application.user_board.sam4s/html/index.html" />
         <offline-documentation help="" />
@@ -309,6 +313,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize for size (-Os)</armgcc.compiler.optimization.level>
@@ -363,6 +369,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.assembler.general.IncludePaths>
   <armgcc.preprocessingassembler.general.AssemblerFlags>-DARM_MATH_CM4=true -DBOARD=USER_BOARD -Dprintf=iprintf -Dscanf=iscanf -DUDD_ENABLE</armgcc.preprocessingassembler.general.AssemblerFlags>
@@ -400,6 +408,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.preprocessingassembler.general.IncludePaths>
 </ArmGcc>
@@ -457,6 +467,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.compiler.directories.IncludePaths>
   <armgcc.compiler.optimization.level>Optimize (-O1)</armgcc.compiler.optimization.level>
@@ -512,6 +524,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.assembler.general.IncludePaths>
   <armgcc.assembler.debugging.DebugLevel>Default (-g)</armgcc.assembler.debugging.DebugLevel>
@@ -550,6 +564,8 @@
       <Value>../src/ASF/sam/drivers/udp</Value>
       <Value>../src/ASF/sam/drivers/wdt</Value>
       <Value>../src/ASF/sam/drivers/tc</Value>
+      <Value>../src/ASF/sam/drivers/pdc</Value>
+      <Value>../src/ASF/sam/drivers/pdc/pdc_uart_example</Value>
     </ListValues>
   </armgcc.preprocessingassembler.general.IncludePaths>
   <armgcc.preprocessingassembler.debugging.DebugLevel>Default (-Wa,-g)</armgcc.preprocessingassembler.debugging.DebugLevel>
@@ -586,6 +602,8 @@
     <Folder Include="src\ASF\sam\drivers\" />
     <Folder Include="src\ASF\sam\drivers\adc\" />
     <Folder Include="src\ASF\sam\drivers\matrix\" />
+    <Folder Include="src\ASF\sam\drivers\pdc\" />
+    <Folder Include="src\ASF\sam\drivers\pdc\pdc_uart_example\" />
     <Folder Include="src\ASF\sam\drivers\pio\" />
     <Folder Include="src\ASF\sam\drivers\pmc\" />
     <Folder Include="src\ASF\sam\drivers\tc\" />
@@ -620,6 +638,7 @@
     <Folder Include="src\ASF\thirdparty\CMSIS\Lib\" />
     <Folder Include="src\ASF\thirdparty\CMSIS\Lib\GCC\" />
     <Folder Include="src\config\" />
+    <Folder Include="src\fir_filters" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="src\adc_serivce.h">
@@ -706,6 +725,15 @@
     <None Include="src\ASF\sam\drivers\tc\tc_capture_waveform_example\tc_capture_waveform_example.h">
       <SubType>compile</SubType>
     </None>
+    <None Include="src\ASF\sam\drivers\pdc\pdc_uart_example\pdc_uart_example.h">
+      <SubType>compile</SubType>
+    </None>
+    <Compile Include="src\ASF\sam\drivers\pdc\pdc.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <None Include="src\ASF\sam\drivers\pdc\pdc.h">
+      <SubType>compile</SubType>
+    </None>
     <Compile Include="src\ASF\sam\drivers\tc\tc.c">
       <SubType>compile</SubType>
     </Compile>
@@ -721,6 +749,15 @@
     <None Include="src\ASF\sam\drivers\wdt\wdt.h">
       <SubType>compile</SubType>
     </None>
+    <Compile Include="src\fir_filters\filter_info.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\fir_filters\fir_filters.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="src\fir_filters\fir_filters.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="src\usart_service.c">
       <SubType>compile</SubType>
     </Compile>

@@ -28,7 +28,7 @@ struct {
 
 #define ADC_PDC_BUFFER_SIZE NUM_CHANNELS
 
-#define TIMER_ADC_SAMPLING_RATE 100000
+#define TIMER_ADC_SAMPLING_RATE 3000
 #define TRACKING_TIME 1
 #define TRANSFER_PERIOD 1
 void initializeAdc(void);

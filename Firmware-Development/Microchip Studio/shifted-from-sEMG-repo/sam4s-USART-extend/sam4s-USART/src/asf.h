@@ -80,6 +80,9 @@
 // From module: MATRIX - Bus Matrix
 #include <matrix.h>
 
+// From module: PDC - Peripheral DMA Controller Example
+#include <pdc.h>
+
 // From module: PIO - Parallel Input/Output Controller
 #include <pio.h>
 

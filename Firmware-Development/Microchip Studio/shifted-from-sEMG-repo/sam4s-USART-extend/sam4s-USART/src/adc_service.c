@@ -81,10 +81,10 @@ static void configure_time_trigger(void)
 void initializeAdc(void)
 {
 	pmc_enable_periph_clk(ID_ADC);
-	adc_init(ADC, sysclk_get_cpu_hz(), 6400000, ADC_STARTUP_TIME_1);
+	adc_init(ADC, sysclk_get_cpu_hz(), 6400000, ADC_STARTUP_TIME_4);
 	memset((void *)&g_adc_sample_data, 0, sizeof(g_adc_sample_data));
 
-	adc_configure_timing(ADC, TRACKING_TIME, ADC_SETTLING_TIME_0, TRANSFER_PERIOD);
+	adc_configure_timing(ADC, 0, ADC_SETTLING_TIME_3, TRANSFER_PERIOD);
 	
 	adc_enable_tag(ADC);
 	adc_configure_sequence(ADC, ch_list, NUM_CHANNELS);
@@ -92,7 +92,7 @@ void initializeAdc(void)
 	/* Enable sequencer. */
 	adc_start_sequencer(ADC);
 	
-	adc_disable_anch(ADC);
+	// adc_disable_anch(ADC);
 	// adc_enable_anch(ADC);
 
 	/* Enable channels. */
@@ -104,31 +104,31 @@ void initializeAdc(void)
 		g_adc_sample_data.uc_ch_num[i] = ch_list[i];
 
 		/* gain = 1 */
-		adc_set_channel_input_gain(ADC, ch_list[i], ADC_GAINVALUE_0);
+		// adc_set_channel_input_gain(ADC, ch_list[i], ADC_GAINVALUE_0);
 
-		adc_disable_channel_input_offset(ADC, ch_list[i]);
+		// adc_disable_channel_input_offset(ADC, ch_list[i]);
 	}
 
-	adc_set_calibmode(ADC);
-	while (1) {
-		if ((adc_get_status(ADC) & ADC_ISR_EOCAL) ==
-				ADC_ISR_EOCAL)
-			break;
-	}
+	// adc_set_calibmode(ADC);
+	// while (1) {
+	// 	if ((adc_get_status(ADC) & ADC_ISR_EOCAL) ==
+	// 			ADC_ISR_EOCAL)
+	// 		break;
+	// }
 
-	adc_configure_power_save(ADC, 0, 0);
+	// adc_configure_power_save(ADC, 0, 0);
 
-	adc_read_buffer(ADC, g_adc_sample_data.us_value, ADC_PDC_BUFFER_SIZE);
+	//adc_read_buffer(ADC, g_adc_sample_data.us_value, ADC_PDC_BUFFER_SIZE);
 		/* Enable PDC channel interrupt. */
-	adc_enable_interrupt(ADC, ADC_IER_RXBUFF);
+	//adc_enable_interrupt(ADC, ADC_IER_RXBUFF);
 	
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
-	// adc_enable_interrupt(ADC, ADC_IER_DRDY);
+	adc_enable_interrupt(ADC, ADC_IER_DRDY);
 	NVIC_EnableIRQ(ADC_IRQn);
 	
-	configure_time_trigger();
-	// adc_configure_trigger(ADC, ADC_TRIG_TIO_CH_0, 0);
+	//configure_time_trigger();
+	adc_configure_trigger(ADC, ADC_TRIG_SW, ADC_MR_FREERUN_ON);
 	
 }
 
@@ -142,13 +142,26 @@ void ADC_Handler(void)
 	uint8_t uc_ch_num;
 
 	/* PDC Sequence */
-	if ((adc_get_status(ADC) & ADC_ISR_RXBUFF) == ADC_ISR_RXBUFF) {
-		g_adc_sample_data.us_done = ADC_DONE_MASK;
-		adc_read_buffer(ADC, g_adc_sample_data.us_value, ADC_PDC_BUFFER_SIZE);
-		/* Only keep sample value, and discard channel number. */
+	//if ((adc_get_status(ADC) & ADC_ISR_RXBUFF) == ADC_ISR_RXBUFF) {
+	//	g_adc_sample_data.us_done = ADC_DONE_MASK;
+	//	adc_read_buffer(ADC, g_adc_sample_data.us_value, ADC_PDC_BUFFER_SIZE);
+	//	/* Only keep sample value, and discard channel number. */
+	//	for (i = 0; i < NUM_CHANNELS; i++) {
+	//		g_adc_sample_data.us_value[i] &= ADC_LCDR_LDATA_Msk;
+	//	}
+	//}	
+	
+	if ((adc_get_status(ADC) & ADC_ISR_DRDY) == ADC_ISR_DRDY)
+	{
+		ul_temp = adc_get_latest_value(ADC);
 		for (i = 0; i < NUM_CHANNELS; i++) {
-			g_adc_sample_data.us_value[i] &= ADC_LCDR_LDATA_Msk;
+			uc_ch_num = (ul_temp & ADC_LCDR_CHNB_Msk) >> ADC_LCDR_CHNB_Pos;
+			if (g_adc_sample_data.uc_ch_num[i] == uc_ch_num) {
+				g_adc_sample_data.us_value[i] =	ul_temp & ADC_LCDR_LDATA_Msk;
+				g_adc_sample_data.us_done |= 1 << i;
+			}
 		}
-	}	
+		//result = adc_get_latest_value(ADC);
+	}
 	
 }
