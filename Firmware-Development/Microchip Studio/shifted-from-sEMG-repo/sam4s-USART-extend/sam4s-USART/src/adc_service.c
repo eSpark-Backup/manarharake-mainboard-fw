@@ -109,12 +109,11 @@ void initializeAdc(void)
 		// adc_disable_channel_input_offset(ADC, ch_list[i]);
 	}
 
-	// adc_set_calibmode(ADC);
-	// while (1) {
-	// 	if ((adc_get_status(ADC) & ADC_ISR_EOCAL) ==
-	// 			ADC_ISR_EOCAL)
-	// 		break;
-	// }
+	adc_set_calibmode(ADC);
+	while (1) {
+		if ((adc_get_status(ADC) & ADC_ISR_EOCAL) == ADC_ISR_EOCAL)
+			break;
+	}
 
 	// adc_configure_power_save(ADC, 0, 0);
 

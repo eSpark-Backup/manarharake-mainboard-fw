@@ -43,9 +43,9 @@
 #define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n"
 #define JSON_PACKET_TEMPLATE_NO_IMU "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
 
-#define JSON_PACKET_TEMPLATE_NO_IMU_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
+#define JSON_PACKET_TEMPLATE_NO_IMU_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
 
-#define ARDUINO_PACKER_TEMPLATE "%d, %d, %d, %d, %d, %d, %d, %d\r\n"
+#define ARDUINO_PACKER_TEMPLATE "%d, %d, %d, %d, %d, %d, %d, %d"
 #define ARDUINO_PACKET_TEMPLATE_FLOAT "%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f"
 #define WINDOW_SIZE 100  // Fixed window size for averaging
 #define BATCH_SIZE 50
@@ -98,7 +98,7 @@ typedef struct {
 
 
 /* UART Data buffer */
-char buf[300];
+char buf[256];
 
 Pdc* g_p_uart_pdc = NULL;
 static bool calibration_done = false;
@@ -185,6 +185,8 @@ void center_emg_signal(adc_batch_t *batch, size_t num_channels) {
         // batch->adc_channels[ch].centered_value = (float)(batch->adc_channels[ch].normalized_value - (float)mean_value);
         batch->adc_channels[ch].centered_value = (float)((float)raw_value - (float)mean_value);
         float centered_value_abs = fabsf(batch->adc_channels[ch].centered_value);
+		/*batch->adc_channels[ch].centered_value = centered_value_abs;*/
+/*		batch->adc_channels[ch].centered_value = (float)mean_value;*/
         if(!calibration_done)
         {
             // adc_ctrl_t *channel = &batch->adc_channels[ch];
@@ -213,8 +215,8 @@ void bandpass_filter_emg_signal(adc_batch_t *batch, size_t num_channels) {
 
 		// Apply the low-pass filter
 		float input = channel->centered_value; // Input to the low-pass filter
-		//channel->filtered_value = FIRFilter_Update(hpf, input);
-		channel->filtered_value = channel->centered_value;
+		channel->filtered_value = FIRFilter_Update(hpf, input);
+		/*channel->filtered_value = channel->centered_value;*/
 		// printf("%.2f, %.2f\n", channel->filtered_value, input);
 	}
 }
@@ -247,7 +249,7 @@ void rectify_filter_emg_signal(adc_batch_t *batch, size_t num_channels) {
 		adc_ctrl_t *channel = &batch->adc_channels[ch];
 
 		float input = channel->filtered_value; // Input to the low-pass filter
-		channel->filtered_value = fabsf(input);
+		channel->filtered_value = fabs(input);
 	}
 }
 
@@ -349,7 +351,7 @@ int main (void)
 	for (size_t ch = 0; ch < NUM_CHANNELS; ch++) {
 		#if USE_BANDPASS_FILTER
 		batch_for_dsp.adc_channels[ch].bpf.buf = (float *)malloc(FILTER_TAP_NUM * sizeof(float));
-		FIRFilter_Init(&batch_for_dsp.adc_channels[ch].bpf.buf, filter_taps, batch_for_dsp.adc_channels[ch].bpf.buf, FILTER_TAP_NUM);
+		FIRFilter_Init(&batch_for_dsp.adc_channels[ch].bpf, filter_taps, batch_for_dsp.adc_channels[ch].bpf.buf, FILTER_TAP_NUM);
 		#else
 		init_highpass_filter(&batch_for_dsp.adc_channels[ch].hpf, sampling_rate, highpass_cutoff);
 		init_lowpass_filter(&batch_for_dsp.adc_channels[ch].lpf, sampling_rate, lowpass_cutoff);
@@ -377,10 +379,10 @@ int main (void)
 			 //g_adc_sample_data.us_done = 0;
 
 			
-			//sprintf(buf, ARDUINO_PACKER_TEMPLATE,
-			//g_adc_sample_data.us_value[0], g_adc_sample_data.us_value[1], g_adc_sample_data.us_value[2], g_adc_sample_data.us_value[3],
-			//g_adc_sample_data.us_value[4], g_adc_sample_data.us_value[5], g_adc_sample_data.us_value[6], g_adc_sample_data.us_value[7]);
-			//g_adc_sample_data.us_done = 0;
+// 			sprintf(buf, ARDUINO_PACKER_TEMPLATE,
+// 			g_adc_sample_data.us_value[0], g_adc_sample_data.us_value[1], g_adc_sample_data.us_value[2], g_adc_sample_data.us_value[3],
+// 			g_adc_sample_data.us_value[4], g_adc_sample_data.us_value[5], g_adc_sample_data.us_value[6], g_adc_sample_data.us_value[7]);
+// 			g_adc_sample_data.us_done = 0;
 			
 			/* Send Packet to UART */
 			// usartWritePacket((uint8_t*)buf);
@@ -399,53 +401,50 @@ int main (void)
 			//float adc_mock = generate_sine_wave();
 			batch_for_dsp.adc_channels[0].raw_value = g_adc_sample_data.us_value[0]; 			
 			// batch_for_dsp.adc_channels[0].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[0].mvc_value = 1.0f; 
 			batch_for_dsp.adc_channels[1].raw_value = g_adc_sample_data.us_value[1]; 			
-			// batch_for_dsp.adc_channels[1].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[1].mvc_value = 1.0f; 
+			// batch_for_dsp.adc_channels[1].raw_value = adc_mock; 
 			batch_for_dsp.adc_channels[2].raw_value = g_adc_sample_data.us_value[2]; 			
-			// batch_for_dsp.adc_channels[2].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[2].mvc_value = 1.0f; 
+			// batch_for_dsp.adc_channels[2].raw_value = adc_mock; 
 			batch_for_dsp.adc_channels[3].raw_value = g_adc_sample_data.us_value[3]; 			
 			// batch_for_dsp.adc_channels[3].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[3].mvc_value = 1.0f; 
 			batch_for_dsp.adc_channels[4].raw_value = g_adc_sample_data.us_value[4]; 			
 			// batch_for_dsp.adc_channels[4].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[4].mvc_value = 1.0f; 
 			batch_for_dsp.adc_channels[5].raw_value = g_adc_sample_data.us_value[5]; 			
 			// batch_for_dsp.adc_channels[5].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[5].mvc_value = 1.0f; 
 			batch_for_dsp.adc_channels[6].raw_value = g_adc_sample_data.us_value[6]; 			
 			// batch_for_dsp.adc_channels[6].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[6].mvc_value = 1.0f; 
 			batch_for_dsp.adc_channels[7].raw_value = g_adc_sample_data.us_value[7]; 			
 			// batch_for_dsp.adc_channels[7].raw_value = adc_mock;
-			batch_for_dsp.adc_channels[7].mvc_value = 1.0f; 
 
 			/*Make calibration flag false after 10 seconds*/
-			
-
 			center_emg_signal(&batch_for_dsp, NUM_CHANNELS);
 			bandpass_filter_emg_signal(&batch_for_dsp, NUM_CHANNELS);
-// 			rectify_filter_emg_signal(&batch_for_dsp, NUM_CHANNELS);
-			//normalize_filter_emg_signal(&batch_for_dsp, NUM_CHANNELS);
+			rectify_filter_emg_signal(&batch_for_dsp, NUM_CHANNELS);
+			normalize_filter_emg_signal(&batch_for_dsp, NUM_CHANNELS);
 
-			/*TEST THE RESULTING VALUES*/
+			/*TEST THE RESULTING VALUES*/			
+// 			sprintf(buf, JSON_PACKET_TEMPLATE_NO_IMU_FLOAT,
+// 			batch_for_dsp.adc_channels[0].filtered_value, batch_for_dsp.adc_channels[1].filtered_value, batch_for_dsp.adc_channels[2].filtered_value, batch_for_dsp.adc_channels[3].filtered_value,
+// 			batch_for_dsp.adc_channels[4].filtered_value, batch_for_dsp.adc_channels[5].filtered_value, batch_for_dsp.adc_channels[6].filtered_value, batch_for_dsp.adc_channels[7].filtered_value);
+// 			g_adc_sample_data.us_done = 0;	
 			
-			sprintf(buf, JSON_PACKET_TEMPLATE_NO_IMU_FLOAT,
+			/* Arduino serial plotter format */
+			sprintf(buf, ARDUINO_PACKET_TEMPLATE_FLOAT,
 			batch_for_dsp.adc_channels[0].filtered_value, batch_for_dsp.adc_channels[1].filtered_value, batch_for_dsp.adc_channels[2].filtered_value, batch_for_dsp.adc_channels[3].filtered_value,
 			batch_for_dsp.adc_channels[4].filtered_value, batch_for_dsp.adc_channels[5].filtered_value, batch_for_dsp.adc_channels[6].filtered_value, batch_for_dsp.adc_channels[7].filtered_value);
-			g_adc_sample_data.us_done = 0;	
+			g_adc_sample_data.us_done = 0;
+			
+// 			sprintf(buf, ARDUINO_PACKER_TEMPLATE,
+// 			batch_for_dsp.adc_channels[0].raw_value, batch_for_dsp.adc_channels[1].raw_value, batch_for_dsp.adc_channels[2].raw_value, batch_for_dsp.adc_channels[3].raw_value,
+// 			batch_for_dsp.adc_channels[4].raw_value, batch_for_dsp.adc_channels[5].raw_value, batch_for_dsp.adc_channels[6].raw_value, batch_for_dsp.adc_channels[7].raw_value);
+// 			g_adc_sample_data.us_done = 0;
 
 // 			sprintf(buf, ARDUINO_PACKET_TEMPLATE_FLOAT,
 // 			1.55, 2.55, 1.22, 1.22,
 // 			1.22, 1.22, 1.22, 1.22);
-// 			g_adc_sample_data.us_done = 0;
-			
-			buf[299] = 0;
-			println(buf);
-
-			
+// 			g_adc_sample_data.us_done = 0;			
+			buf[255] = 0;
+			println(buf);			
 		}
 		
 		wdt_restart(WDT);
