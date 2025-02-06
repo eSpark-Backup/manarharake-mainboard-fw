@@ -429,10 +429,10 @@ int main (void)
 // 			g_adc_sample_data.us_done = 0;	
 			
 			/* Arduino serial plotter format */
-			sprintf(buf, ARDUINO_PACKET_TEMPLATE_FLOAT,
-			batch_for_dsp.adc_channels[0].filtered_value, batch_for_dsp.adc_channels[1].filtered_value, batch_for_dsp.adc_channels[2].filtered_value, batch_for_dsp.adc_channels[3].filtered_value,
-			batch_for_dsp.adc_channels[4].filtered_value, batch_for_dsp.adc_channels[5].filtered_value, batch_for_dsp.adc_channels[6].filtered_value, batch_for_dsp.adc_channels[7].filtered_value);
-			g_adc_sample_data.us_done = 0;
+			// sprintf(buf, ARDUINO_PACKET_TEMPLATE_FLOAT,
+			// batch_for_dsp.adc_channels[0].filtered_value, batch_for_dsp.adc_channels[1].filtered_value, batch_for_dsp.adc_channels[2].filtered_value, batch_for_dsp.adc_channels[3].filtered_value,
+			// batch_for_dsp.adc_channels[4].filtered_value, batch_for_dsp.adc_channels[5].filtered_value, batch_for_dsp.adc_channels[6].filtered_value, batch_for_dsp.adc_channels[7].filtered_value);
+			// g_adc_sample_data.us_done = 0;
 			
 // 			sprintf(buf, ARDUINO_PACKER_TEMPLATE,
 // 			batch_for_dsp.adc_channels[0].raw_value, batch_for_dsp.adc_channels[1].raw_value, batch_for_dsp.adc_channels[2].raw_value, batch_for_dsp.adc_channels[3].raw_value,
@@ -443,8 +443,17 @@ int main (void)
 // 			1.55, 2.55, 1.22, 1.22,
 // 			1.22, 1.22, 1.22, 1.22);
 // 			g_adc_sample_data.us_done = 0;			
-			buf[255] = 0;
-			println(buf);			
+// 			buf[255] = 0;
+// 			println(buf);		
+
+// 			memcpy(&adc_values_s, (&g_adc_sample_data + (sizeof(uint8_t) * NUM_CHANNELS)), sizeof(adc_values_s));
+// 			send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
+// 			usartWritePacket((uint8_t*)buf);	
+			
+			//usart_serial_write_packet(CONF_UART, (void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
+			
+			char dummyPacket[64] = "Data From Atmel\r\n";
+			usart_serial_write_packet((CONF_UART), dummyPacket, strlen(dummyPacket));
 		}
 		
 		wdt_restart(WDT);
