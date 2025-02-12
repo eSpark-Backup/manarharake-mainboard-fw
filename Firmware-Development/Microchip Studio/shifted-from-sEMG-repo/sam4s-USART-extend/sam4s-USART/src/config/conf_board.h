@@ -68,4 +68,7 @@
 #define TC_IRQn     TC2_IRQn
 //! [tc_define_irq_handler]
 
+#define CONF_BOARD_USART_RXD
+#define CONF_BOARD_USART_TXD
+
 #endif /* CONF_BOARD_H_INCLUDED */

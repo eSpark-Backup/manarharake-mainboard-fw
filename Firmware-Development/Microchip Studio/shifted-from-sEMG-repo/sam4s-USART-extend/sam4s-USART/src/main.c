@@ -40,7 +40,7 @@
 #include "fir_filters/fir_filters.h"
 #include "fir_filters/filter_info.h"
 
-#define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n"
+#define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n\r\n"
 #define JSON_PACKET_TEMPLATE_NO_IMU "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
 
 #define JSON_PACKET_TEMPLATE_NO_IMU_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
@@ -294,6 +294,15 @@ void send_struct(const void* data, size_t size)
 	udi_cdc_putc(ch);
 }
 
+void send_struct_uart(const void* data, size_t size)
+{
+	usart_serial_write_packet(CONF_UART, data, size);
+	char ch = '\r';
+	usart_serial_putchar(CONF_UART, ch);
+	ch = '\n';
+	usart_serial_putchar(CONF_UART, ch);
+}
+
 void cdc_received()
 {
 	char valueBuffer;
@@ -364,12 +373,14 @@ int main (void)
 	while(true)
 	{
 		// delay_ms(10);
+		/*delay_ms(1000);*/
 
 		//getImuData(&imuData);
 		adc_start(ADC);
 		
 		/* Check if ADC sample is done. get the samples */
 		if (g_adc_sample_data.us_done == ADC_DONE_MASK) {	
+			delay_ms(500);
 								
 			/* Fill the buffer to be sent via UART */
 			//sprintf(buf, JSON_PACKET_TEMPLATE,
@@ -426,7 +437,7 @@ int main (void)
 // 			sprintf(buf, JSON_PACKET_TEMPLATE_NO_IMU_FLOAT,
 // 			batch_for_dsp.adc_channels[0].filtered_value, batch_for_dsp.adc_channels[1].filtered_value, batch_for_dsp.adc_channels[2].filtered_value, batch_for_dsp.adc_channels[3].filtered_value,
 // 			batch_for_dsp.adc_channels[4].filtered_value, batch_for_dsp.adc_channels[5].filtered_value, batch_for_dsp.adc_channels[6].filtered_value, batch_for_dsp.adc_channels[7].filtered_value);
-// 			g_adc_sample_data.us_done = 0;	
+			g_adc_sample_data.us_done = 0;	
 			
 			/* Arduino serial plotter format */
 			// sprintf(buf, ARDUINO_PACKET_TEMPLATE_FLOAT,
@@ -444,17 +455,41 @@ int main (void)
 // 			1.22, 1.22, 1.22, 1.22);
 // 			g_adc_sample_data.us_done = 0;			
 // 			buf[255] = 0;
-// 			println(buf);		
+// 			println(buf);
+// 			println(buf);	
 
-// 			memcpy(&adc_values_s, (&g_adc_sample_data + (sizeof(uint8_t) * NUM_CHANNELS)), sizeof(adc_values_s));
-// 			send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
-// 			usartWritePacket((uint8_t*)buf);	
+			/*memcpy((void*)&adc_values_s, (&g_adc_sample_data + (sizeof(uint8_t) * NUM_CHANNELS)), sizeof(adc_values_s));*/
+			send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
+			send_struct_uart((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value)); //16 bytes
+
+			// Send "\r\n" separately
+// 			char end_seq[] = "\r\n";
+// 			send_struct_uart((void*)end_seq, sizeof(end_seq)-1); //2 bytes
+// 			send_struct((void*)end_seq, sizeof(end_seq)-1);
+
+			//usartWritePacket((uint8_t*)buf);	
+			//println(buf);
 			
 			//usart_serial_write_packet(CONF_UART, (void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
 			
-			char dummyPacket[64] = "Data From Atmel\r\n";
-			usart_serial_write_packet((CONF_UART), dummyPacket, strlen(dummyPacket));
+// 			char dummyPacket[64] = "Data From Atmel\r\n";
+// 			usart_serial_write_packet((CONF_UART), dummyPacket, strlen(dummyPacket));
 		}
+
+// 		sprintf(buf, JSON_PACKET_TEMPLATE,
+// 		g_adc_sample_data.us_value[0], g_adc_sample_data.us_value[1], g_adc_sample_data.us_value[2], g_adc_sample_data.us_value[3],
+// 		g_adc_sample_data.us_value[4], g_adc_sample_data.us_value[5], g_adc_sample_data.us_value[6], g_adc_sample_data.us_value[7],
+// 		(int)imuData.gyroscope[0], (int)imuData.gyroscope[1], (int)imuData.gyroscope[2], (int)imuData.accelerometer[0], (int)imuData.accelerometer[1], (int)imuData.accelerometer[2]);
+// 		g_adc_sample_data.us_done = 0;
+		
+// 		sprintf(buf, JSON_PACKET_TEMPLATE,
+// 		1024, 1024, 1024, 1024,
+// 		1024, 1024, 1024, 1024,
+// 		1024, 1024, 1024, 1024, 1024, 1024);
+		//sprintf(buf, "Hello world\r\n\r\n");
+		//g_adc_sample_data.us_done = 0;
+// 		usartWritePacket((uint8_t*)buf);
+// 		println(buf);
 		
 		wdt_restart(WDT);
 	}
