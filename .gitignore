@@ -11,3 +11,5 @@ build
 
 ## IGNORE MICROCHIP IGNORE FOLDER
 debug
+/Firmware-Development/nRF-Connect/adc-struct-peri-uart/build_1
+/Firmware-Development/nRF-Connect/adc-struct-peri-uart/build_2
