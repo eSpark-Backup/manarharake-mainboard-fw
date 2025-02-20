@@ -83,5 +83,6 @@ void adc_sampling_start();
 void read_adc(void);
 void print_adc_values();
 void adc_set_logging_callback(adc_log_cb_t log_cb);
+void adc_set_plotter_callback(adc_log_cb_t log_cb);
 
 #endif //__ADC_CONTROLLER_H__
