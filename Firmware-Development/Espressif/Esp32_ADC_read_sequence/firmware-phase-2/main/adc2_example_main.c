@@ -35,6 +35,7 @@ void app_main(void)
     // set_custom_encoder(pass_through_encoder);
 
     // adc_set_logging_callback((adc_log_cb_t)printf_logging);
+    adc_set_plotter_callback((adc_log_cb_t)printf_logging);
     // adc_set_logging_callback((adc_log_cb_t)ble_service_send_data);
     adc_set_logging_callback((adc_log_cb_t)ble_service_send_data_encoded);
     adc_sampling_start();

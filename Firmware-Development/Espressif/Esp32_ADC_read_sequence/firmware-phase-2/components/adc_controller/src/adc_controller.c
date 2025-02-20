@@ -33,6 +33,7 @@ static moving_avg_t emg_avg_buffers[NUM_ADC_CHANNELS] = {0};  // Buffer for each
 static sliding_moving_avg_t emg_sliding_avg_buffers[NUM_ADC_CHANNELS] = {0};  // Buffer for each channel
 static adc_batch_t batch_buffer[BATCH_SIZE];  // Array to hold batches from the queue
 static adc_log_cb_t __log_cb = NULL;
+static adc_log_cb_t __serial_log_cb = NULL;
 static bool calibration_done = false;    
 
 void adc_queue_handle_task(void *pvParameters);
@@ -206,14 +207,18 @@ char* __get_adc_values_string(const adc_ctrl_t *adc_channels, size_t num_channel
 
 void print_adc_values(adc_ctrl_t* adc_data_ptr)
 {
-    // char *adc_values_string = __get_adc_values_string(adc_data_ptr, NUM_ADC_CHANNELS, serial_plotter_mean_formatter);
-    char *adc_values_string = __get_adc_values_string(adc_data_ptr, NUM_ADC_CHANNELS, json_formatter);
-    // char *adc_values_string = __get_adc_values_string(adc_data_ptr, NUM_ADC_CHANNELS, csv_formatter);
-    // printf("%s", adc_values_string);
+    char *adc_values_string = __get_adc_values_string(adc_data_ptr, NUM_ADC_CHANNELS, serial_plotter_mean_formatter);
+    if(__serial_log_cb)
+    {
+        __serial_log_cb(adc_values_string, strlen(adc_values_string)+1);
+    }
+
+    adc_values_string = __get_adc_values_string(adc_data_ptr, NUM_ADC_CHANNELS, json_formatter);
     if(__log_cb)
     {
         __log_cb(adc_values_string, strlen(adc_values_string)+1);
     }
+
 }
 
 double generate_sine_wave() 
@@ -331,6 +336,11 @@ void adc_timer_init() {
 void adc_set_logging_callback(adc_log_cb_t log_cb)
 {
     __log_cb = log_cb;
+}
+
+void adc_set_plotter_callback(adc_log_cb_t log_cb)
+{
+    __serial_log_cb = log_cb;
 }
 
 void adc_sampling_start()
