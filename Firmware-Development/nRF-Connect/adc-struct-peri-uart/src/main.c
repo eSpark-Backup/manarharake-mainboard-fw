@@ -56,6 +56,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define UART_WAIT_FOR_RX CONFIG_BT_NUS_UART_RX_WAIT_TIME
 
 #define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n"
+#define JSON_PACKET_TEMPLATE_NO_IMU "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
+// #define JSON_PACKET_TEMPLATE_NO_IMU "{%d, %d, %d, %d, %d, %d, %d, %d}"
 
 static K_SEM_DEFINE(ble_init_ok, 0, 1);
 
@@ -134,9 +136,11 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		if (!buf) {
 			return;
 		}
-
-		if (uart_tx(uart, buf->data, buf->len, SYS_FOREVER_MS)) {
-			LOG_WRN("Failed to send data over UART");
+		
+		int ret = 0;
+		ret = uart_tx(uart, buf->data, buf->len, SYS_FOREVER_MS);
+		if (ret) {
+			LOG_WRN("Failed to send data over UART, code %d", ret);
 		}
 
 		break;
@@ -616,6 +620,9 @@ int main(void)
 		}
 	}
 
+	// bt_set_bondable(false);
+	// bt_passkey_set(123456);
+
 	err = bt_enable(NULL);
 	if (err) {
 		error();
@@ -656,54 +663,46 @@ void ble_write_thread(void)
 		.len = 0,
 	};
 
-	// char Jsonbuffer[256];
-
 	for (;;) {
 		/* Wait indefinitely for data to be sent over bluetooth */
-		// char *dummy_buffer = "Hello world epsark";
 		struct uart_data_t *buf = k_fifo_get(&fifo_uart_rx_data,
 						     K_FOREVER);
-
-		// struct uart_data_t *buf = (struct uart_data_t*)k_malloc(sizeof(struct uart_data_t));
-		// buf->len = sizeof(dummy_buffer);
-		// memcpy(&buf->data[0], dummy_buffer, buf->len);
-
-		// adc_values_s* adc_data = (adc_values_s*)k_malloc(sizeof(adc_values_s));
-		// memcpy(adc_data, buf->data, buf->len);
-
-		// int len = sprintf(nus_data.data, JSON_PACKET_TEMPLATE, 
-		// adc_data->us_value[0], adc_data->us_value[1], adc_data->us_value[2], adc_data->us_value[3],
-		// adc_data->us_value[4], adc_data->us_value[5], adc_data->us_value[6], adc_data->us_value[7],
-		// 0,0,0,0,0,0);
-
-		// int len = sprintf(nus_data.data, JSON_PACKET_TEMPLATE, 
-		// 4096, 4096, 4096, 4096,
-		// 4096, 4096, 4096, 4096,
-		// 0,0,0,0,0,0);
 
 		int plen = MIN(sizeof(nus_data.data) - nus_data.len, buf->len);
 		int loc = 0;
 
 		while (plen > 0) {
-
-			// memcpy(&nus_data.data[nus_data.len], &buf->data[loc], plen);
+			memcpy(&nus_data.data[nus_data.len], &buf->data[loc], plen);
 			nus_data.len += plen;
 			loc += plen;
 
-			if (nus_data.len >= sizeof(nus_data.data) ||
-			   (nus_data.data[nus_data.len - 1] == '\n') ||
-			   (nus_data.data[nus_data.len - 1] == '\r')) {
-				if (bt_nus_send(NULL, nus_data.data, nus_data.len)) {
-					LOG_WRN("Failed to send data over BLE connection");
+			// Convert raw ADC data to JSON and send via BLE
+			if (nus_data.len >= NUM_CHANNELS * 2) {
+				uint16_t adc_values[NUM_CHANNELS];
+				for (int i = 0; i < NUM_CHANNELS; i++) {
+					memcpy(&adc_values[i], &nus_data.data[i * 2], 2);
 				}
-				nus_data.len = 0;
+
+				char json_string[256];  // Buffer for JSON output
+				snprintf(json_string, sizeof(json_string), JSON_PACKET_TEMPLATE_NO_IMU,
+						adc_values[0], adc_values[1], adc_values[2], adc_values[3],
+						adc_values[4], adc_values[5], adc_values[6], adc_values[7]);
+				// LOG_INF("JSON FORMED %s", json_string);
+
+				// Send JSON over BLE
+				int ret = bt_nus_send(NULL, json_string, strlen(json_string));
+				// if (ret) {
+				// 	// printk("Failed to send JSON over BLE: %d\n", ret);
+				// }
+			} else {
+				printk("Invalid packet length: %d bytes\n", nus_data.len);
 			}
+				nus_data.len = 0;
 
 			plen = MIN(sizeof(nus_data.data), buf->len - loc);
 		}
 
 		k_free(buf);
-		// k_free(adc_data);
 	}
 }
 
