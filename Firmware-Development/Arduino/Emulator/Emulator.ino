@@ -6,9 +6,7 @@
 #include <ArduinoJson.h>
 #include "base64.hpp"
 
-// #define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n"
-// #define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d}\r\n"
-#define JSON_PACKET_TEMPLATE_FLOAT "{\"ADC\":{\"Value_0\":%.2f,\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f}\r\n"
+#define JSON_PACKET_TEMPLATE_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f,}\r\n"
 char jsonString[256];
 
 BLEServer *pServer = NULL;
@@ -17,6 +15,7 @@ bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint8_t txValue = 0;
 bool notificationsEnabled = false;
+BLE2902* p2902Descriptor = new BLE2902();
 
 bool calibrated = false;
 int calibrationStartTime = 0;
@@ -31,7 +30,6 @@ int lastNotifyTime = 0;
 // #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 // #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "00000000-0000-0000-0000-000000000000"
-#define CHARACTERISTIC_UUID_RX "00000000-0000-0000-0000-000000000001"
 
 int adcPins[NUM_CHANNELS] = {36, 39, 34, 35, 32, 33, 25, 26};  // ADC pins
 int adcBuffer[NUM_CHANNELS][WINDOW_SIZE] = {0}; // Buffers for each channel
@@ -62,7 +60,6 @@ void updateADCValues() {
 
         bufferIndex[i] = (bufferIndex[i] + 1) % WINDOW_SIZE; // Circular buffer
 
-        // Compute centered value and store if needed
         prevCentered[i] = centeredADCValues[i];
         centeredADCValues[i] = getCenteredValue(newValue, i);
 
@@ -120,9 +117,6 @@ class MyCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
-uint8_t zeroUUID[16] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
 class MyDescriptorCallbacks : public BLEDescriptorCallbacks {
   void onWrite(BLEDescriptor* pDescriptor) {
     uint8_t* data = pDescriptor->getValue();
@@ -135,9 +129,6 @@ class MyDescriptorCallbacks : public BLEDescriptorCallbacks {
     }
   }
 };
-
-
-BLE2902* p2902Descriptor = new BLE2902();
 
 void setup() {
   Serial.begin(115200);
