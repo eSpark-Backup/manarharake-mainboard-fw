@@ -184,7 +184,7 @@ void loop() {
         calibrated = true;
       }
     }
-    if((millis() - lastNotifyTime) > 1000)
+    if((millis() - lastNotifyTime) > 30)
     {
 
       snprintf(jsonString, sizeof(jsonString), JSON_PACKET_TEMPLATE_FLOAT,
