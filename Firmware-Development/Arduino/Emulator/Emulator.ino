@@ -18,11 +18,80 @@ bool oldDeviceConnected = false;
 uint8_t txValue = 0;
 bool notificationsEnabled = false;
 
+bool calibrated = false;
+int calibrationStartTime = 0;
+bool calibStarted = false;
+int lastNotifyTime = 0;
+
+#define NUM_CHANNELS 8  // Number of ADC channels
+#define WINDOW_SIZE 100 // Number of samples for rolling average
+#define ADC_MAX 4095.0  // ESP32 ADC 12-bit maximum value
+
 #define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"  // UART service UUID
 // #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 // #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-#define CHARACTERISTIC_UUID_TX 0xFF01
+#define CHARACTERISTIC_UUID_TX "00000000-0000-0000-0000-000000000000"
 #define CHARACTERISTIC_UUID_RX "00000000-0000-0000-0000-000000000001"
+
+int adcPins[NUM_CHANNELS] = {36, 39, 34, 35, 32, 33, 25, 26};  // ADC pins
+int adcBuffer[NUM_CHANNELS][WINDOW_SIZE] = {0}; // Buffers for each channel
+int bufferIndex[NUM_CHANNELS] = {0}; // Current index in each buffer
+int centeredADCValues[NUM_CHANNELS] = {0}; // Current index in each buffer
+int maxADCValues[NUM_CHANNELS] = {0};
+long sum[NUM_CHANNELS] = {0}; // Sum for rolling average
+
+float prevHighPass[NUM_CHANNELS] = {0}; // Store previous high-pass values
+float prevCentered[NUM_CHANNELS] = {0}; // Store previous high-pass values
+float prevLowPass[NUM_CHANNELS] = {0};  // Store previous low-pass values
+
+float getMean(int channel) {
+    return sum[channel] / (float)WINDOW_SIZE;
+}
+float getCenteredValue(int rawValue, int channel) {
+    float meanValue = getMean(channel);  // Compute mean from the last 100 samples
+    return rawValue - meanValue;  // Centered value
+}
+
+void updateADCValues() {
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        int newValue = analogRead(adcPins[i]);
+
+        sum[i] -= adcBuffer[i][bufferIndex[i]]; // Remove oldest value
+        adcBuffer[i][bufferIndex[i]] = newValue; // Store new value
+        sum[i] += newValue; // Add new value to sum
+
+        bufferIndex[i] = (bufferIndex[i] + 1) % WINDOW_SIZE; // Circular buffer
+
+        // Compute centered value and store if needed
+        prevCentered[i] = centeredADCValues[i];
+        centeredADCValues[i] = getCenteredValue(newValue, i);
+
+        // Update max ADC value ever read
+        if (calibStarted && ((fabs(centeredADCValues[i])) > maxADCValues[i])) {
+            maxADCValues[i] = newValue;
+        }
+    }
+}
+
+
+float normalize(float value, int channel) {
+    return value / maxADCValues[channel];
+}
+
+float highPassFilter(float input, int channel, float alpha = 0.9) {
+    float output = alpha * (prevHighPass[channel] + input - prevCentered[channel] );
+    prevHighPass[channel] = output;  // Store previous value for next iteration
+    return output;
+}
+
+float lowPassFilter(float input, int channel, float alpha = 0.1) {
+    prevLowPass[channel] = alpha * input + (1 - alpha) * prevLowPass[channel];
+    return prevLowPass[channel];
+}
+
+float rectifySignal(float input) {
+    return fabs(input);  // Absolute value to remove negative values
+}
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
@@ -69,38 +138,24 @@ class MyDescriptorCallbacks : public BLEDescriptorCallbacks {
 
 
 BLE2902* p2902Descriptor = new BLE2902();
-// pTxCharacteristic->addDescriptor(p2902Descriptor);
 
 void setup() {
   Serial.begin(115200);
-  // Create the BLE Device
-  BLEDevice::init("ESP_GATTS_DEMO");
+  BLEDevice::init("ESP_GATTS_DEMO_V2");
   
   BLEDevice::setMTU(247);
 
-  // Create the BLE Server
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   p2902Descriptor->setNotifications(false);
   p2902Descriptor->setCallbacks(new MyDescriptorCallbacks());
 
-  // Create the BLE Service
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  // Create a BLE Characteristic
-  pTxCharacteristic = pService->createCharacteristic(BLEUUID(CHARACTERISTIC_UUID_TX), BLECharacteristic::PROPERTY_NOTIFY);
-  // pTxCharacteristic = pService->createCharacteristic(
-  //       BLEUUID(zeroUUID, 16, true),
-  //       BLECharacteristic::PROPERTY_NOTIFY
-  //   );
+  pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
 
   pTxCharacteristic->addDescriptor(p2902Descriptor);
 
-  // BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
-
-  // pRxCharacteristic->setCallbacks(new MyCallbacks());
-
-  // Start the service
   pService->start();
 
   // Start advertising
@@ -110,58 +165,54 @@ void setup() {
 
 void loop() {
   int adcValues[8];
-   adcValues[0] = random(0, 4096); // Random value for ADC between 0 and 1023
-   adcValues[1] = random(0, 4096);
-   adcValues[2] = random(0, 4096);
-   adcValues[3] = random(0, 4096);
-   adcValues[4] = random(0, 4096);
-   adcValues[5] = random(0, 4096);
-   adcValues[6] = random(0, 4096);
-   adcValues[7] = random(0, 4096);
+  float filterValues[8];
+  updateADCValues();
 
-    // adcValues[0] = analogRead(36);  // ADC1_CH0 (GPIO36)
-    // adcValues[1] = analogRead(39);  // ADC1_CH3 (GPIO39)
-    // adcValues[2] = analogRead(34);  // ADC1_CH6 (GPIO34)
-    // adcValues[3] = analogRead(35);  // ADC1_CH7 (GPIO35)
-    // adcValues[4] = analogRead(32);  // ADC1_CH4 (GPIO32)
-    // adcValues[5] = analogRead(33);  // ADC1_CH5 (GPIO33)
-    // adcValues[6] = analogRead(25);  // ADC2_CH8 (GPIO25) - Wi-Fi Conflict
-    // adcValues[7] = analogRead(26);  // ADC2_CH9 (GPIO26) - Wi-Fi Conflict
-
-  // int gyroX = random(-1000, 1000); // Random value for gyro between -1000 and 1000
-  // int gyroY = random(-1000, 1000);
-  // int gyroZ = random(-1000, 1000);
-
-  // int accX = random(-1000, 1000);  // Random value for accelerometer between -1000 and 1000
-  // int accY = random(-1000, 1000);
-  // int accZ = random(-1000, 1000);
-
-  snprintf(jsonString, sizeof(jsonString), JSON_PACKET_TEMPLATE_FLOAT,
-         adcValues[0]/4096.0f, adcValues[1]/4096.0f, adcValues[2]/4096.0f, adcValues[3]/4096.0f,
-         adcValues[4]/4096.0f, adcValues[5]/4096.0f, adcValues[6]/4096.0f, adcValues[7]/4096.0f
-        //  gyroX, gyroY, gyroZ, accX, accY, accZ);
-  );
-
-  int jsonStringLen = strlen(jsonString);
-  int encodedLength = 4*(jsonStringLen/3);
-  char encodedString[encodedLength + 1];
-  encode_base64( (unsigned char *)jsonString, jsonStringLen,  (unsigned char *)encodedString);
-
-  // if (deviceConnected) {
-
-  //   pTxCharacteristic->setValue(encodedString);
-  //   pTxCharacteristic->notify();
-  //   Serial.println(encodedString);
-  //   txValue++;
-  //   delay(50);  // bluetooth stack will go into congestion, if too many packets are sent
-  // }
+  for (int i = 0; i < NUM_CHANNELS; i++) {
+        float centered = centeredADCValues[i]; 
+        float highPass = highPassFilter(centered, i);  // Apply high-pass filter
+        float lowPass = lowPassFilter(highPass, i); // Apply low-pass filter
+        float norm = normalize(lowPass, i);     // Normalize
+        float rect = rectifySignal(norm);
+        filterValues[i] = rect;
+        Serial.print(rect); // Final processed signal
+        Serial.print(",");
+  }
+  // Serial.print(maxADCValues[0]);
+  Serial.println();
 
   if (deviceConnected && notificationsEnabled) {
-    pTxCharacteristic->setValue(encodedString);
-    pTxCharacteristic->notify();
-    Serial.println("Sent notification: " + String(encodedString));
-    txValue++;
-    delay(50);
+    if(!calibStarted && !calibrated){
+      calibrationStartTime = millis();
+      calibStarted = true;
+    }
+
+    if(calibStarted && !calibrated){
+      if(millis() - calibrationStartTime > 10000){
+        calibStarted = false;
+        calibrated = true;
+      }
+    }
+    if((millis() - lastNotifyTime) > 1000)
+    {
+
+      snprintf(jsonString, sizeof(jsonString), JSON_PACKET_TEMPLATE_FLOAT,
+          filterValues[0], filterValues[1], filterValues[2], filterValues[3],
+          filterValues[4], filterValues[5], filterValues[6], filterValues[7]
+          //  gyroX, gyroY, gyroZ, accX, accY, accZ);
+      );
+
+      int jsonStringLen = strlen(jsonString);
+      int encodedLength = 4*(jsonStringLen/3);
+      char encodedString[encodedLength + 1];
+      encode_base64( (unsigned char *)jsonString, jsonStringLen,  (unsigned char *)encodedString);
+
+      pTxCharacteristic->setValue(encodedString);
+      pTxCharacteristic->notify();
+      Serial.println("Sent notification: " + String(encodedString));
+      txValue++;
+      lastNotifyTime = millis();
+    }
   }
 
   // disconnecting
