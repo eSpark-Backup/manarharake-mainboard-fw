@@ -6,7 +6,8 @@
 #include <ArduinoJson.h>
 #include "base64.hpp"
 
-#define JSON_PACKET_TEMPLATE_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f,}\r\n"
+// #define JSON_PACKET_TEMPLATE_FLOAT "{\"ADC\":{\"Value_1\":%.2f,\"Value_2\":%.2f,\"Value_3\":%.2f,\"Value_4\":%.2f,\"Value_5\":%.2f,\"Value_6\":%.2f,\"Value_7\":%.2f,\"Value_8\":%.2f}}"
+#define JSON_PACKET_TEMPLATE_FLOAT_V2 "{\"FIL\":[%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f], \"RAW\":[%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f]}\r\n"
 char jsonString[256];
 
 BLEServer *pServer = NULL;
@@ -64,8 +65,9 @@ void updateADCValues() {
         centeredADCValues[i] = getCenteredValue(newValue, i);
 
         // Update max ADC value ever read
-        if (calibStarted && ((fabs(centeredADCValues[i])) > maxADCValues[i])) {
-            maxADCValues[i] = newValue;
+        float absCenteredValue = (fabs(centeredADCValues[i]));
+        if (calibStarted && ( absCenteredValue > maxADCValues[i])) {
+            maxADCValues[i] = absCenteredValue;
         }
     }
 }
@@ -131,19 +133,20 @@ class MyDescriptorCallbacks : public BLEDescriptorCallbacks {
 };
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
   BLEDevice::init("ESP_GATTS_DEMO_V2");
   
   BLEDevice::setMTU(247);
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
-  p2902Descriptor->setNotifications(false);
+  p2902Descriptor->setNotifications(true);
   p2902Descriptor->setCallbacks(new MyDescriptorCallbacks());
 
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
+  // pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
+  pTxCharacteristic = pService->createCharacteristic(BLEUUID((uint16_t)0x0000), BLECharacteristic::PROPERTY_NOTIFY);
 
   pTxCharacteristic->addDescriptor(p2902Descriptor);
 
@@ -168,8 +171,10 @@ void loop() {
         filterValues[i] = rect;
         Serial.print(rect); // Final processed signal
         Serial.print(",");
+        Serial.print(lowPass);
+        Serial.print(",");
   }
-  // Serial.print(maxADCValues[0]);
+  // Serial.print(maxADCValues[0]); //this show the max MVC value
   Serial.println();
 
   if (deviceConnected && notificationsEnabled) {
@@ -187,9 +192,11 @@ void loop() {
     if((millis() - lastNotifyTime) > 30)
     {
 
-      snprintf(jsonString, sizeof(jsonString), JSON_PACKET_TEMPLATE_FLOAT,
+      snprintf(jsonString, sizeof(jsonString), JSON_PACKET_TEMPLATE_FLOAT_V2,
           filterValues[0], filterValues[1], filterValues[2], filterValues[3],
-          filterValues[4], filterValues[5], filterValues[6], filterValues[7]
+          filterValues[4], filterValues[5], filterValues[6], filterValues[7],
+          prevLowPass[0], prevLowPass[1], prevLowPass[2], prevLowPass[3],
+          prevLowPass[4], prevLowPass[5], prevLowPass[6], prevLowPass[7]
           //  gyroX, gyroY, gyroZ, accX, accY, accZ);
       );
 
@@ -200,7 +207,7 @@ void loop() {
 
       pTxCharacteristic->setValue(encodedString);
       pTxCharacteristic->notify();
-      Serial.println("Sent notification: " + String(encodedString));
+      // Serial.println("Sent notification: " + String(encodedString));
       txValue++;
       lastNotifyTime = millis();
     }
