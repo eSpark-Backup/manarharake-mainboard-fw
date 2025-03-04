@@ -67,6 +67,10 @@ static struct bt_conn *auth_conn;
 static const struct device *uart = DEVICE_DT_GET(DT_CHOSEN(nordic_nus_uart));
 static struct k_work_delayable uart_work;
 
+static volatile bool pairing_request = false;
+static volatile bool client_connected = false;
+static volatile bool paired_success = false;
+
 struct uart_data_t {
 	void *fifo_reserved;
 	uint8_t data[UART_BUF_SIZE];
@@ -103,6 +107,30 @@ typedef struct{
 	uint16_t us_value[NUM_CHANNELS];
 }adc_values_s;
 
+void notify_sam_pairing_status(bool paired){
+	int ret = 0;
+	struct uart_data_t *tx = k_malloc(sizeof(*tx));
+	if(paired)
+	{
+		static uint8_t paired_buf[] =  {"paired\r\n"};
+		memcpy(tx->data, paired_buf, sizeof(paired_buf));
+		tx->len = sizeof(paired_buf);
+		// uart_tx(uart, paired_buf, sizeof(paired_buf), SYS_FOREVER_MS);
+	}
+	else
+	{
+		static uint8_t unpaired_buf[] =  {"unpaired\r\n"};
+		memcpy(tx->data, unpaired_buf, sizeof(unpaired_buf));
+		tx->len = sizeof(unpaired_buf);
+		// uart_tx(uart, unpaired_buf, sizeof(unpaired_buf), SYS_FOREVER_MS);
+	}
+	ret = uart_tx(uart, tx->data, tx->len, SYS_FOREVER_MS);
+    if (ret < 0) {
+        LOG_ERR("uart_tx failed: %d\n", ret);
+    }
+
+}
+
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
 {
 	ARG_UNUSED(dev);
@@ -114,7 +142,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 
 	switch (evt->type) {
 	case UART_TX_DONE:
-		LOG_DBG("UART_TX_DONE");
+		LOG_INF("UART_TX_DONE");
 		if ((evt->data.tx.len == 0) ||
 		    (!evt->data.tx.buf)) {
 			return;
@@ -146,7 +174,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_RDY:
-		LOG_DBG("UART_RX_RDY");
+		LOG_INF("UART_RX_RDY");
 		buf = CONTAINER_OF(evt->data.rx.buf, struct uart_data_t, data[0]);
 		buf->len += evt->data.rx.len;
 
@@ -163,7 +191,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_DISABLED:
-		LOG_DBG("UART_RX_DISABLED");
+		LOG_INF("UART_RX_DISABLED");
 		disable_req = false;
 
 		buf = k_malloc(sizeof(*buf));
@@ -181,7 +209,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_BUF_REQUEST:
-		LOG_DBG("UART_RX_BUF_REQUEST");
+		LOG_INF("UART_RX_BUF_REQUEST");
 		buf = k_malloc(sizeof(*buf));
 		if (buf) {
 			buf->len = 0;
@@ -193,7 +221,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_BUF_RELEASED:
-		LOG_DBG("UART_RX_BUF_RELEASED");
+		LOG_INF("UART_RX_BUF_RELEASED");
 		buf = CONTAINER_OF(evt->data.rx_buf.buf, struct uart_data_t,
 				   data[0]);
 
@@ -206,7 +234,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_TX_ABORTED:
-		LOG_DBG("UART_TX_ABORTED");
+		LOG_INF("UART_TX_ABORTED");
 		if (!aborted_buf) {
 			aborted_buf = (uint8_t *)evt->data.tx.buf;
 		}
@@ -357,6 +385,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	if (err) {
 		LOG_ERR("Connection failed, err 0x%02x %s", err, bt_hci_err_to_str(err));
+		client_connected = false;
 		return;
 	}
 
@@ -366,6 +395,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	current_conn = bt_conn_ref(conn);
 
 	dk_set_led_on(CON_STATUS_LED);
+	client_connected = true;
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -375,6 +405,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_INF("Disconnected: %s, reason 0x%02x %s", addr, reason, bt_hci_err_to_str(reason));
+	client_connected = false;
 
 	if (auth_conn) {
 		bt_conn_unref(auth_conn);
@@ -385,6 +416,9 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		bt_conn_unref(current_conn);
 		current_conn = NULL;
 		dk_set_led_off(CON_STATUS_LED);
+	}
+	{
+		notify_sam_pairing_status(false);
 	}
 }
 
@@ -438,6 +472,7 @@ static void auth_passkey_confirm(struct bt_conn *conn, unsigned int passkey)
 	} else {
 		LOG_INF("Press Button 1 to confirm, Button 2 to reject.");
 	}
+	pairing_request = true;
 }
 
 
@@ -458,6 +493,11 @@ static void pairing_complete(struct bt_conn *conn, bool bonded)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	LOG_INF("Pairing completed: %s, bonded: %d", addr, bonded);
+	pairing_request = false;
+	paired_success = true;
+	{
+		notify_sam_pairing_status(true);
+	}
 }
 
 
@@ -469,6 +509,8 @@ static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 
 	LOG_INF("Pairing failed conn: %s, reason %d %s", addr, reason,
 		bt_security_err_to_str(reason));
+	pairing_request = false;
+	paired_success = false;
 }
 
 static struct bt_conn_auth_cb conn_auth_callbacks = {
@@ -609,19 +651,16 @@ int main(void)
 	if (IS_ENABLED(CONFIG_BT_NUS_SECURITY_ENABLED)) {
 		err = bt_conn_auth_cb_register(&conn_auth_callbacks);
 		if (err) {
-			printk("Failed to register authorization callbacks.\n");
+			LOG_ERR("Failed to register authorization callbacks.\n");
 			return 0;
 		}
 
 		err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
 		if (err) {
-			printk("Failed to register authorization info callbacks.\n");
+			LOG_ERR("Failed to register authorization info callbacks.\n");
 			return 0;
 		}
 	}
-
-	// bt_set_bondable(false);
-	// bt_passkey_set(123456);
 
 	err = bt_enable(NULL);
 	if (err) {
@@ -651,7 +690,21 @@ int main(void)
 
 	for (;;) {
 		dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
-		k_sleep(K_MSEC(10000));
+		k_sleep(K_MSEC(1000));
+		LOG_INF("LOOP RUNNING");
+
+		if(pairing_request)
+		{
+			k_sleep(K_MSEC(5000));
+			num_comp_reply(true);
+			pairing_request = false;
+		}
+
+		if(!paired_success)
+		{
+			notify_sam_pairing_status(false);
+		}
+
 	}
 }
 
@@ -692,16 +745,15 @@ void ble_write_thread(void)
 				// Send JSON over BLE
 				int ret = bt_nus_send(NULL, json_string, strlen(json_string));
 				// if (ret) {
-				// 	// printk("Failed to send JSON over BLE: %d\n", ret);
+				// 	// LOG_ERR("Failed to send JSON over BLE: %d\n", ret);
 				// }
 			} else {
-				printk("Invalid packet length: %d bytes\n", nus_data.len);
+				LOG_ERR("Invalid packet length: %d bytes\n", nus_data.len);
 			}
 				nus_data.len = 0;
 
 			plen = MIN(sizeof(nus_data.data), buf->len - loc);
 		}
-
 		k_free(buf);
 	}
 }
