@@ -13,6 +13,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/usb/usb_device.h>
+#include <zephyr/sys/sys_heap.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -107,6 +108,19 @@ typedef struct{
 	uint16_t us_value[NUM_CHANNELS];
 }adc_values_s;
 
+extern struct k_heap _system_heap;
+struct sys_memory_stats stats;
+void rtos_hal_print_heap_info(void) 
+{
+    sys_heap_runtime_stats_get(&_system_heap.heap, &stats);
+
+    LOG_INF(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+    LOG_INF("INFO: Allocated Heap = %zu", stats.allocated_bytes);
+    LOG_INF("INFO: Free Heap = %zu", stats.free_bytes);
+    LOG_INF("INFO: Max Allocated Heap = %zu", stats.max_allocated_bytes);
+
+    return;
+}
 void notify_sam_pairing_status(bool paired){
 	int ret = 0;
 	struct uart_data_t *tx = k_malloc(sizeof(*tx));
@@ -128,7 +142,6 @@ void notify_sam_pairing_status(bool paired){
     if (ret < 0) {
         LOG_ERR("uart_tx failed: %d\n", ret);
     }
-
 }
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
@@ -142,7 +155,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 
 	switch (evt->type) {
 	case UART_TX_DONE:
-		LOG_INF("UART_TX_DONE");
+		LOG_DBG("UART_TX_DONE");
 		if ((evt->data.tx.len == 0) ||
 		    (!evt->data.tx.buf)) {
 			return;
@@ -174,7 +187,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_RDY:
-		LOG_INF("UART_RX_RDY");
+		LOG_DBG("UART_RX_RDY");
 		buf = CONTAINER_OF(evt->data.rx.buf, struct uart_data_t, data[0]);
 		buf->len += evt->data.rx.len;
 
@@ -191,7 +204,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_DISABLED:
-		LOG_INF("UART_RX_DISABLED");
+		LOG_DBG("UART_RX_DISABLED");
 		disable_req = false;
 
 		buf = k_malloc(sizeof(*buf));
@@ -209,7 +222,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_BUF_REQUEST:
-		LOG_INF("UART_RX_BUF_REQUEST");
+		LOG_DBG("UART_RX_BUF_REQUEST");
 		buf = k_malloc(sizeof(*buf));
 		if (buf) {
 			buf->len = 0;
@@ -221,7 +234,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_RX_BUF_RELEASED:
-		LOG_INF("UART_RX_BUF_RELEASED");
+		LOG_DBG("UART_RX_BUF_RELEASED");
 		buf = CONTAINER_OF(evt->data.rx_buf.buf, struct uart_data_t,
 				   data[0]);
 
@@ -234,7 +247,7 @@ static void uart_cb(const struct device *dev, struct uart_event *evt, void *user
 		break;
 
 	case UART_TX_ABORTED:
-		LOG_INF("UART_TX_ABORTED");
+		LOG_DBG("UART_TX_ABORTED");
 		if (!aborted_buf) {
 			aborted_buf = (uint8_t *)evt->data.tx.buf;
 		}
@@ -394,7 +407,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	current_conn = bt_conn_ref(conn);
 
-	dk_set_led_on(CON_STATUS_LED);
+	// dk_set_led_on(CON_STATUS_LED);
 	client_connected = true;
 }
 
@@ -415,10 +428,11 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	if (current_conn) {
 		bt_conn_unref(current_conn);
 		current_conn = NULL;
-		dk_set_led_off(CON_STATUS_LED);
+		// dk_set_led_off(CON_STATUS_LED);
 	}
 	{
 		notify_sam_pairing_status(false);
+		delete_bonded_devices();
 	}
 }
 
@@ -580,7 +594,7 @@ static struct bt_nus_cb nus_cb = {
 
 void error(void)
 {
-	dk_set_leds_state(DK_ALL_LEDS_MSK, DK_NO_LEDS_MSK);
+	// dk_set_leds_state(DK_ALL_LEDS_MSK, DK_NO_LEDS_MSK);
 
 	while (true) {
 		/* Spin for ever */
@@ -636,6 +650,16 @@ static void configure_gpio(void)
 	}
 }
 
+void delete_bonded_devices(void)
+{
+    int err = bt_unpair(BT_ID_DEFAULT, NULL); // NULL deletes all
+    if (err) {
+        LOG_ERR("Failed to delete bonds (err %d)\n", err);
+    } else {
+        LOG_INF("All bonds deleted\n");
+    }
+}
+
 int main(void)
 {
 	int blink_status = 0;
@@ -688,11 +712,13 @@ int main(void)
 		return 0;
 	}
 
+	delete_bonded_devices();
+
 	for (;;) {
 		dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
 		k_sleep(K_MSEC(1000));
 		LOG_INF("LOOP RUNNING");
-
+		rtos_hal_print_heap_info();
 		if(pairing_request)
 		{
 			k_sleep(K_MSEC(5000));
