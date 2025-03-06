@@ -757,7 +757,7 @@ void ble_write_thread(void)
 
 			// Convert raw ADC data to JSON and send via BLE
 			if (nus_data.len >= NUM_CHANNELS * 2) {
-				uint16_t adc_values[NUM_CHANNELS];
+				uint16_t adc_values[NUM_CHANNELS] = {0};
 				for (int i = 0; i < NUM_CHANNELS; i++) {
 					memcpy(&adc_values[i], &nus_data.data[i * 2], 2);
 				}
