@@ -13,7 +13,10 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/usb/usb_device.h>
-#include <zephyr/sys/sys_heap.h>
+
+#ifndef CONFIG_SOC_NRF52810
+	#include <zephyr/sys/sys_heap.h>
+#endif
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -108,6 +111,7 @@ typedef struct{
 	uint16_t us_value[NUM_CHANNELS];
 }adc_values_s;
 
+#ifndef CONFIG_SOC_NRF52810
 extern struct k_heap _system_heap;
 struct sys_memory_stats stats;
 void rtos_hal_print_heap_info(void) 
@@ -121,6 +125,8 @@ void rtos_hal_print_heap_info(void)
 
     return;
 }
+#endif
+
 void notify_sam_pairing_status(bool paired){
 	int ret = 0;
 	struct uart_data_t *tx = k_malloc(sizeof(*tx));
@@ -718,7 +724,9 @@ int main(void)
 		dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
 		k_sleep(K_MSEC(1000));
 		LOG_INF("LOOP RUNNING");
+#ifndef CONFIG_SOC_NRF52810
 		rtos_hal_print_heap_info();
+#endif
 		if(pairing_request)
 		{
 			k_sleep(K_MSEC(5000));
