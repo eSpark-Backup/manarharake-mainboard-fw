@@ -380,7 +380,7 @@ int main (void)
 		
 		/* Check if ADC sample is done. get the samples */
 		if (g_adc_sample_data.us_done == ADC_DONE_MASK) {	
-			delay_ms(500);
+			delay_ms(50);
 								
 			/* Fill the buffer to be sent via UART */
 			//sprintf(buf, JSON_PACKET_TEMPLATE,
