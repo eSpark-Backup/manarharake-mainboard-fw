@@ -18,6 +18,8 @@ static usart_serial_options_t usart_options = {
 void initializeUart(void)
 {
 	usart_serial_init(CONF_UART, &usart_options);
+	usart_enable_interrupt(CONF_UART, US_IER_RXRDY);
+	NVIC_EnableIRQ(CONSOLE_USART_IRQn);
 }
 
 void usartWritePacket(uint8_t* bufPtr)

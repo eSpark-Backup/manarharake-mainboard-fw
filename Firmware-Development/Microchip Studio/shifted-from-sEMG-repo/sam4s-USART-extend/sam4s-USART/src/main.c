@@ -54,6 +54,12 @@ static float sampling_rate = 1000.0f;      // Example sampling rate
 static float highpass_cutoff = 30.0f;      // High-pass cutoff frequency
 static float lowpass_cutoff = 450.0f;       // Low-pass cutoff frequency
 
+static bool isBlePaired = false;
+#define BLE_STATUS_BUFFER_SIZE 16
+uint8_t rx_index = 0;
+volatile bool command_received = false;
+char rx_buffer[BLE_STATUS_BUFFER_SIZE] = {0};
+
 //void console_usart_irq_handler(void)
 //{
 	/* Get UART status and check if PDC receive buffer is full */
@@ -312,6 +318,50 @@ void cdc_received()
 }
 
 adc_batch_t batch_for_dsp = {0};
+	
+void USART1_Handler(void)
+{
+	uint32_t dw_status = usart_get_status(CONF_UART);
+	if (dw_status & US_CSR_RXRDY) {
+		uint32_t received_byte;
+		usart_read(CONF_UART, &received_byte);
+		udi_cdc_putc(received_byte); // Echo received character for debugging
+
+		if (rx_index < BLE_STATUS_BUFFER_SIZE - 1) {
+			rx_buffer[rx_index++] = (char)received_byte;
+
+			// Check if last two bytes are CRLF ("\r\n")
+			if (rx_index >= 2 && rx_buffer[rx_index - 2] == '\r' && rx_buffer[rx_index - 1] == '\n') {
+				rx_buffer[rx_index - 2] = '\0'; // Null-terminate at CR position
+				command_received = true;       // Signal main loop
+				rx_index = 0;                  // Reset for the next command
+			}
+			} else {
+			// Buffer overflow: Reset index but keep last valid command
+			rx_index = 0;
+		}
+	}
+}
+
+void process_ble_command()
+{
+	if (command_received) {
+		println("command received");
+		command_received = false; 
+		println(rx_buffer);
+
+		if (strstr(rx_buffer, "unpaired") != NULL) { 
+			println("Pairing set to false");
+			isBlePaired = false;
+			} else if (strstr(rx_buffer, "paired") != NULL) { 
+			println("Pairing set to true");
+			isBlePaired = true;
+		}
+
+		memset(rx_buffer, 0, BLE_STATUS_BUFFER_SIZE);  
+	}
+}
+
 
 int main (void)
 {
@@ -335,7 +385,7 @@ int main (void)
 		
 	/* Initialize IMU */
 	initializeImu();
-	delay_ms(3000);
+	/*delay_ms(10000);*/
 	const char *greetingMsgBuf = "Firmware Starting";
 	println(greetingMsgBuf);
 	
@@ -356,6 +406,7 @@ int main (void)
 	usart_enable_interrupt(CONF_UART, US_IER_TXBUFE);
 	NVIC_EnableIRQ(USART1_IRQn);	
 	*/
+	
 
 	for (size_t ch = 0; ch < NUM_CHANNELS; ch++) {
 		#if USE_BANDPASS_FILTER
@@ -376,6 +427,7 @@ int main (void)
 		/*delay_ms(1000);*/
 
 		//getImuData(&imuData);
+		process_ble_command();
 		adc_start(ADC);
 		
 		/* Check if ADC sample is done. get the samples */
@@ -459,8 +511,11 @@ int main (void)
 // 			println(buf);	
 
 			/*memcpy((void*)&adc_values_s, (&g_adc_sample_data + (sizeof(uint8_t) * NUM_CHANNELS)), sizeof(adc_values_s));*/
-			send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));
-			send_struct_uart((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value)); //16 bytes
+			/*send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));*/
+			if(isBlePaired == true)
+			{
+				send_struct_uart((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value)); //16 bytes				
+			}			
 
 			// Send "\r\n" separately
 // 			char end_seq[] = "\r\n";
