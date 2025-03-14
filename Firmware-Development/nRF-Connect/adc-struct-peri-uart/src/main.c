@@ -132,21 +132,21 @@ void notify_sam_pairing_status(bool paired){
 	struct uart_data_t *tx = k_malloc(sizeof(*tx));
 	if(paired)
 	{
-		static uint8_t paired_buf[] =  {"paired\r\n"};
-		memcpy(tx->data, paired_buf, sizeof(paired_buf));
-		tx->len = sizeof(paired_buf);
+		uint8_t paired_buf[] =  {"paired\r\n"};
+		memcpy(tx->data, paired_buf, strlen(paired_buf));
+		tx->len = strlen(paired_buf);
 		// uart_tx(uart, paired_buf, sizeof(paired_buf), SYS_FOREVER_MS);
 	}
 	else
 	{
-		static uint8_t unpaired_buf[] =  {"unpaired\r\n"};
-		memcpy(tx->data, unpaired_buf, sizeof(unpaired_buf));
-		tx->len = sizeof(unpaired_buf);
+		uint8_t unpaired_buf[] =  {"unpaired\r\n"};
+		memcpy(tx->data, unpaired_buf, strlen(unpaired_buf));
+		tx->len = strlen(unpaired_buf);
 		// uart_tx(uart, unpaired_buf, sizeof(unpaired_buf), SYS_FOREVER_MS);
 	}
 	ret = uart_tx(uart, tx->data, tx->len, SYS_FOREVER_MS);
     if (ret < 0) {
-        LOG_ERR("uart_tx failed: %d\n", ret);
+        LOG_ERR("uart_txfailed: %d\n", ret);
     }
 }
 
@@ -437,6 +437,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		// dk_set_led_off(CON_STATUS_LED);
 	}
 	{
+		paired_success = false;
 		notify_sam_pairing_status(false);
 		delete_bonded_devices();
 	}
@@ -736,7 +737,7 @@ int main(void)
 
 		if(!paired_success)
 		{
-			notify_sam_pairing_status(false);
+			notify_sam_pairing_status(paired_success);
 		}
 
 	}
