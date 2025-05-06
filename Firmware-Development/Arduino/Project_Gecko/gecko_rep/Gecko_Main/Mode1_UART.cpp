@@ -209,12 +209,12 @@ void sendCommand(int gesture) {
 
     // Map gestures to corresponding grip commands
     switch (gesture) {
-        case 1: command = "G3\r\n"; break;  // FIST
+        case 1: command = "G0\r\n"; break;  // FIST
         case 2: command = "G4\r\n"; break;  // PALM
         case 3: command = "G1\r\n"; break;  // THUMBS
         case 4: command = "G5\r\n"; break;  // POINT
         case 5: command = "G2\r\n"; break;  // PINCH
-        case 6: command = "G6\r\n"; break;  // TRIPOD
+        case 6: command = "G3\r\n"; break;  // TRIPOD
         default: break;
     }
 
