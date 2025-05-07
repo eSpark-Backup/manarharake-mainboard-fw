@@ -55,12 +55,13 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define KEY_PASSKEY_ACCEPT DK_BTN1_MSK
 #define KEY_PASSKEY_REJECT DK_BTN2_MSK
 
-#define UART_BUF_SIZE 18
+#define UART_BUF_SIZE 34
 #define UART_WAIT_FOR_BUF_DELAY K_MSEC(50)
 #define UART_WAIT_FOR_RX CONFIG_BT_NUS_UART_RX_WAIT_TIME
 
 #define JSON_PACKET_TEMPLATE "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":%d,\"Y\":%d,\"Z\":%d},\"Acc\":{\"X\":%d,\"Y\":%d,\"Z\":%d}}\r\n"
 #define JSON_PACKET_TEMPLATE_NO_IMU "{\"ADC\":{\"Value_1\":%d,\"Value_2\":%d,\"Value_3\":%d,\"Value_4\":%d,\"Value_5\":%d,\"Value_6\":%d,\"Value_7\":%d,\"Value_8\":%d},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
+#define JSON_PACKET_TEMPLATE_NO_IMU_IMP "{\"ADC\":{\"Value_1\":%d.%02d\"Value_2\":%d.%02d,\"Value_3\":%d.%02d,\"Value_4\":%d.%02d,\"Value_5\":%d.%02d,\"Value_6\":%d.%02d,\"Value_7\":%d.%02d,\"Value_8\":%d.%02d},\"Gyro\":{\"X\":0,\"Y\":0,\"Z\":0},\"Acc\":{\"X\":0,\"Y\":0,\"Z\":0}}\r\n"
 // #define JSON_PACKET_TEMPLATE_NO_IMU "{%d, %d, %d, %d, %d, %d, %d, %d}"
 
 static K_SEM_DEFINE(ble_init_ok, 0, 1);
@@ -743,6 +744,8 @@ int main(void)
 	}
 }
 
+#define FLOAT_TO_INT_AND_FRAC(f) (int)f, ((int)((f - ((int)f))*100))
+
 void ble_write_thread(void)
 {
 	/* Don't go any further until BLE is initialized */
@@ -765,16 +768,17 @@ void ble_write_thread(void)
 			loc += plen;
 
 			// Convert raw ADC data to JSON and send via BLE
-			if (nus_data.len >= NUM_CHANNELS * 2) {
-				uint16_t adc_values[NUM_CHANNELS] = {0};
+			if (nus_data.len >= NUM_CHANNELS * 4) {
+				float adc_values[NUM_CHANNELS] = {0};
 				for (int i = 0; i < NUM_CHANNELS; i++) {
-					memcpy(&adc_values[i], &nus_data.data[i * 2], 2);
+					memcpy(&adc_values[i], &nus_data.data[i * 4], 4);
 				}
 
 				char json_string[256];  // Buffer for JSON output
-				snprintf(json_string, sizeof(json_string), JSON_PACKET_TEMPLATE_NO_IMU,
-						adc_values[0], adc_values[1], adc_values[2], adc_values[3],
-						adc_values[4], adc_values[5], adc_values[6], adc_values[7]);
+				float test_float = 0.9888;
+				snprintf(json_string, sizeof(json_string), JSON_PACKET_TEMPLATE_NO_IMU_IMP,
+				FLOAT_TO_INT_AND_FRAC(adc_values[0]), FLOAT_TO_INT_AND_FRAC(adc_values[1]), FLOAT_TO_INT_AND_FRAC(adc_values[2]), FLOAT_TO_INT_AND_FRAC(adc_values[3]),
+				FLOAT_TO_INT_AND_FRAC(adc_values[4]), FLOAT_TO_INT_AND_FRAC(adc_values[5]), FLOAT_TO_INT_AND_FRAC(adc_values[6]), FLOAT_TO_INT_AND_FRAC(adc_values[7]));
 				// LOG_INF("JSON FORMED %s", json_string);
 
 				// Send JSON over BLE
