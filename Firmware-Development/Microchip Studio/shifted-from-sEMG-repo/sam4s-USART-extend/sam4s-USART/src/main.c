@@ -75,6 +75,12 @@ typedef struct{
 }adc_values_s;
 
 typedef struct {
+	float filteredInformation[NUM_CHANNELS];
+}adc_float_values_s;
+
+adc_float_values_s filteredValue;
+
+typedef struct {
 	float mvc_value;                    //Maximum Voluntary Contraction (MVC)
 
     int raw_value;                      // Store the raw ADC reading
@@ -266,6 +272,7 @@ void normalize_filter_emg_signal(adc_batch_t *batch, size_t num_channels) {
 
 		float input = channel->filtered_value; // Input to the low-pass filter
 		channel->filtered_value = input/channel->mvc_value;
+		filteredValue.filteredInformation[ch] = channel->filtered_value;
 	}
 }
 
@@ -429,10 +436,16 @@ int main (void)
 		//getImuData(&imuData);
 		process_ble_command();
 		adc_start(ADC);
+		/*delay_ms(25);*/
+		int sizeoffloat = sizeof(float);
+		char bufferofprinting[64] = {0};
+
+// 		snprintf(bufferofprinting, sizeof(bufferofprinting), "float size: %d", sizeoffloat);
+// 		println(bufferofprinting);
 		
 		/* Check if ADC sample is done. get the samples */
 		if (g_adc_sample_data.us_done == ADC_DONE_MASK) {	
-			delay_ms(50);
+			/*delay_ms(50);*/
 								
 			/* Fill the buffer to be sent via UART */
 			//sprintf(buf, JSON_PACKET_TEMPLATE,
@@ -514,7 +527,22 @@ int main (void)
 			/*send_struct((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value));*/
 			if(isBlePaired == true)
 			{
-				send_struct_uart((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value)); //16 bytes				
+				/*send_struct_uart((void*)&g_adc_sample_data + sizeof(g_adc_sample_data.uc_ch_num), sizeof(g_adc_sample_data.us_value)); //16 bytes*/
+				send_struct_uart((void*)&filteredValue, sizeof(adc_float_values_s)); //32 bytes		
+/*				send_struct((void*)&filteredValue, sizeof(adc_float_values_s));*/
+				
+// 				float values[8];
+// 				memcpy(values, (float*)&filteredValue, 32);
+// 				
+// 				snprintf(bufferofprinting, sizeof(bufferofprinting), "Size of adc_float_values_s %d", sizeof(adc_float_values_s));
+// 				println(bufferofprinting);
+				
+// 				for (int i = 0; i < 8; ++i) {
+// 					snprintf(bufferofprinting, sizeof(bufferofprinting), "Float %d orignal: %.2f, converted %.2f\n", i + 1, filteredValue.filteredInformation[i], values[i]);
+// 					println(bufferofprinting);			
+// 				
+// /*					printf("Float %d orignal: %.2f, converted %.2f\n", i + 1, filteredValue[i], values[i]);*/
+// 				}
 			}			
 
 			// Send "\r\n" separately
