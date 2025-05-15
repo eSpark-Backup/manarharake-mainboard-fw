@@ -935,6 +935,106 @@ void uart_init() {
 	print_uart("Tell me something and press enter:\r\n");
 }
 
+typedef void (*mode_handler_t)(void);
+
+void handle_mode_palm_pcb(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_mode_mouse(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_mode_gamepad(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_mode_vr(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_1(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_2(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_3(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_4(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_5(void) {
+    printk("%s", __FUNCTION__);
+}
+
+void handle_gest_6(void) {
+    printk("%s", __FUNCTION__);
+}
+
+typedef enum  {
+    MODE_UNKNOWN = 0,
+    MODE_1,
+    MODE_2,
+    MODE_3,
+    MODE_4,
+	GEST_1,
+	GEST_2,
+	GEST_3,
+	GEST_4,
+	GEST_5,
+	GEST_6,
+
+}manar_control_mode_t;
+
+typedef struct {
+    const char *cmd;
+    manar_control_mode_t mode;
+    mode_handler_t handler;
+} mode_map_t;
+
+const mode_map_t mode_table[] = {
+    {"M1", MODE_1, handle_mode_palm_pcb},
+    {"M2", MODE_2, handle_mode_mouse},
+    {"M3", MODE_3, handle_mode_gamepad},
+    {"M4", MODE_4, handle_mode_vr},
+    {"1", GEST_1, handle_gest_1},
+    {"2", GEST_2, handle_gest_2},
+    {"3", GEST_3, handle_gest_3},
+    {"4", GEST_4, NULL},
+    {"5", GEST_5, NULL},
+    {"6", GEST_6, NULL},
+	{NULL, MODE_UNKNOWN, NULL},
+};
+
+manar_control_mode_t get_mode_from_string(const char *cmd) {
+    for (int i = 0; mode_table[i].cmd != NULL; i++) {
+        if (strcmp(cmd, mode_table[i].cmd) == 0) {
+            return mode_table[i].mode;
+        }
+    }
+    return MODE_UNKNOWN;
+}
+
+void handle_command(const char *cmd) {
+    for (int i = 0; mode_table[i].cmd != NULL; i++) {
+        if (strcmp(cmd, mode_table[i].cmd) == 0) {
+            if (mode_table[i].handler != NULL) {
+                mode_table[i].handler();
+            } else {
+                printk("No handler assigned for mode: %s\n", cmd);
+            }
+            return;
+        }
+    }
+    printk("Unknown command: %s\n", cmd);
+}
+
 int main(void)
 {
 	int err;
@@ -996,13 +1096,8 @@ int main(void)
 			printk(tx_buf);
 			printk("\r\n");
 
-			if (strcmp(tx_buf, "M1") == 0) {
-				printk("turn_led_on();");
-			} else if (strcmp(tx_buf, "M2") == 0) {
-				printk("turn_led_off();");
-			} else if (tx_buf[0] == 'M3') {
-				printk("handle_reset_command();");
-			}
+			handle_command(tx_buf);
+
 		}
 		/* Battery level simulation */
 		bas_notify();
