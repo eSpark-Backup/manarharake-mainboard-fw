@@ -97,17 +97,31 @@ BT_HIDS_DEF(hids_obj,
 	    INPUT_REP_MOVEMENT_LEN,
 	    INPUT_REP_MEDIA_PLAYER_LEN);
 
+#define MOUSE_BTN_LEFT   0x01
+#define MOUSE_BTN_RIGHT  0x02
+#define MOUSE_BTN_MIDDLE 0x04
+
 static struct k_work hids_work;
+static struct k_work hids_work_button;
 struct mouse_pos {
 	int16_t x_val;
 	int16_t y_val;
 };
 
+struct mouse_button {
+	uint8_t button_mask;  // 🖱️ New field for mouse buttons
+};
+
 /* Mouse movement queue. */
-K_MSGQ_DEFINE(hids_queue,
+K_MSGQ_DEFINE(hids_movement_queue,
 	      sizeof(struct mouse_pos),
 	      HIDS_QUEUE_SIZE,
 	      4);
+
+K_MSGQ_DEFINE(hids_button_queue,
+			sizeof(struct mouse_button),
+			HIDS_QUEUE_SIZE,
+			4);
 
 #if CONFIG_BT_DIRECTED_ADVERTISING
 /* Bonded address queue. */
@@ -609,8 +623,8 @@ static void hid_init(void)
 		0xC0              /* End Collection */
 	};
 
-	hids_init_param.rep_map.data = report_map_gamepad;
-	hids_init_param.rep_map.size = sizeof(report_map_gamepad);
+	hids_init_param.rep_map.data = report_map_mouse;
+	hids_init_param.rep_map.size = sizeof(report_map_mouse);
 
 	hids_init_param.info.bcd_hid = BASE_USB_HID_SPEC_VERSION;
 	hids_init_param.info.b_country_code = 0x00;
@@ -633,13 +647,58 @@ static void hid_init(void)
 	hids_inp_rep->id = INPUT_REP_REF_MPLAYER_ID;
 	hids_init_param.inp_rep_group_init.cnt++;
 
-	hids_init_param.is_mouse = false;
+	hids_init_param.is_mouse = true;
 	hids_init_param.pm_evt_handler = hids_pm_evt_handler;
 
 	err = bt_hids_init(&hids_obj, &hids_init_param);
 	__ASSERT(err == 0, "HIDS initialization failed\n");
 }
 
+
+static void mouse_button_send(uint8_t button_mask)
+{
+    for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+        if (!conn_mode[i].conn) continue;
+
+        if (conn_mode[i].in_boot_mode) {
+            // Boot mode: simpler API
+            bt_hids_boot_mouse_inp_rep_send(&hids_obj,
+                                            conn_mode[i].conn,
+                                            button_mask,
+                                            0, 0,
+                                            NULL);
+            k_msleep(10);
+            bt_hids_boot_mouse_inp_rep_send(&hids_obj,
+                                            conn_mode[i].conn,
+                                            0, 0, 0,
+                                            NULL);
+        } else {
+            // Report mode: use INPUT_REP_BUTTONS_INDEX
+            uint8_t report[INPUT_REP_BUTTONS_LEN] = {0};
+
+            report[0] = button_mask;  // Buttons (Left, Right, Middle)
+            report[1] = 0x00;         // Padding or reserved
+            report[2] = 0x00;         // Padding or reserved
+
+            bt_hids_inp_rep_send(&hids_obj,
+                                 conn_mode[i].conn,
+                                 INPUT_REP_BUTTONS_INDEX,
+                                 report,
+                                 INPUT_REP_BUTTONS_LEN,
+                                 NULL);
+
+            k_msleep(10);  // simulate press duration
+
+            report[0] = 0x00;  // release buttons
+            bt_hids_inp_rep_send(&hids_obj,
+                                 conn_mode[i].conn,
+                                 INPUT_REP_BUTTONS_INDEX,
+                                 report,
+                                 INPUT_REP_BUTTONS_LEN,
+                                 NULL);
+        }
+    }
+}
 
 static void mouse_movement_send(int16_t x_delta, int16_t y_delta)
 {
@@ -688,12 +747,21 @@ static void mouse_movement_send(int16_t x_delta, int16_t y_delta)
 }
 
 
-static void mouse_handler(struct k_work *work)
+static void mouse_movement_handler(struct k_work *work)
 {
 	struct mouse_pos pos;
 
-	while (!k_msgq_get(&hids_queue, &pos, K_NO_WAIT)) {
+	while (!k_msgq_get(&hids_movement_queue, &pos, K_NO_WAIT)) {
 		mouse_movement_send(pos.x_val, pos.y_val);
+	}
+}
+
+static void mouse_button_handler(struct k_work *work)
+{
+	struct mouse_button sbutton_mask;
+
+	while (!k_msgq_get(&hids_button_queue, &sbutton_mask, K_NO_WAIT)) {
+		mouse_button_send(sbutton_mask.button_mask);
 	}
 }
 
@@ -872,12 +940,12 @@ void button_changed(uint32_t button_state, uint32_t has_changed)
 	if (data_to_send) {
 		int err;
 
-		err = k_msgq_put(&hids_queue, &pos, K_NO_WAIT);
+		err = k_msgq_put(&hids_movement_queue, &pos, K_NO_WAIT);
 		if (err) {
 			printk("No space in the queue for button pressed\n");
 			return;
 		}
-		if (k_msgq_num_used_get(&hids_queue) == 1) {
+		if (k_msgq_num_used_get(&hids_movement_queue) == 1) {
 			k_work_submit(&hids_work);
 		}
 	}
@@ -935,104 +1003,320 @@ void uart_init() {
 	print_uart("Tell me something and press enter:\r\n");
 }
 
-typedef void (*mode_handler_t)(void);
-
-void handle_mode_palm_pcb(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_mode_mouse(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_mode_gamepad(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_mode_vr(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_1(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_2(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_3(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_4(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_5(void) {
-    printk("%s", __FUNCTION__);
-}
-
-void handle_gest_6(void) {
-    printk("%s", __FUNCTION__);
-}
-
-typedef enum  {
+typedef enum {
     MODE_UNKNOWN = 0,
     MODE_1,
     MODE_2,
     MODE_3,
     MODE_4,
-	GEST_1,
-	GEST_2,
-	GEST_3,
-	GEST_4,
-	GEST_5,
-	GEST_6,
+} manar_mode_t;
 
-}manar_control_mode_t;
+typedef enum {
+    GEST_UNKNOWN = 0,
+    GEST_1,
+    GEST_2,
+    GEST_3,
+    GEST_4,
+    GEST_5,
+    GEST_6,
+} manar_gesture_t;
+
+typedef void (*mode_handler_t)(void);
 
 typedef struct {
     const char *cmd;
-    manar_control_mode_t mode;
+    manar_mode_t mode;
     mode_handler_t handler;
 } mode_map_t;
 
-const mode_map_t mode_table[] = {
+static manar_mode_t current_mode = MODE_UNKNOWN;
+static manar_gesture_t current_gesture = GEST_UNKNOWN;
+
+void handle_mouse_movement(int dx, int dy) {
+    int err;
+    struct mouse_pos pos;
+
+    memset(&pos, 0, sizeof(struct mouse_pos));
+    pos.x_val = dx;
+    pos.y_val = dy;
+
+    err = k_msgq_put(&hids_movement_queue, &pos, K_NO_WAIT);
+    if (err) {
+        printk("No space in the queue for button pressed\n");
+        return;
+    }
+
+    if (k_msgq_num_used_get(&hids_movement_queue) == 1) {
+        k_work_submit(&hids_work);
+    }
+}
+
+void handle_mouse_button(uint32_t btn_mask) {
+	int err;
+    struct mouse_button pvbutton_mask;
+
+    memset(&pvbutton_mask, 0, sizeof(struct mouse_button));
+	pvbutton_mask.button_mask = btn_mask;
+
+    err = k_msgq_put(&hids_button_queue, &pvbutton_mask, K_NO_WAIT);
+    if (err) {
+        printk("No space in the queue for button pressed\n");
+        return;
+    }
+
+    if (k_msgq_num_used_get(&hids_button_queue) == 1) {
+        k_work_submit(&hids_work_button);
+    }
+}
+
+
+void handle_mode_palm_pcb(void) {
+    printk("%s", __FUNCTION__);
+	current_mode = MODE_1;
+}
+
+void handle_mode_mouse(void) {
+    printk("%s", __FUNCTION__);
+	current_mode = MODE_2;
+}
+
+void handle_mode_gamepad(void) {
+    printk("%s", __FUNCTION__);
+	current_mode = MODE_3;
+}
+
+void handle_mode_vr(void) {
+    printk("%s", __FUNCTION__);
+	current_mode = MODE_4;
+}
+
+void handle_gest_1(void) {
+    printk("%s", __FUNCTION__);
+	switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 1 triggered in MODE_1\n");
+			// handle_mouse_movement(+MOVEMENT_SPEED, 0);
+			handle_mouse_button(MOUSE_BTN_LEFT);
+            break;
+
+        case MODE_2:
+            printk("Gesture 1 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 1 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 1 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 1 triggered in unknown mode\n");
+            break;
+    }
+
+}
+
+void handle_gest_2(void) {
+    printk("%s", __FUNCTION__);
+	switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 2 triggered in MODE_1\n");
+			// handle_mouse_movement(-MOVEMENT_SPEED, 0);
+			handle_mouse_button(MOUSE_BTN_RIGHT);
+            break;
+
+        case MODE_2:
+            printk("Gesture 2 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 2 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 2 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 2 triggered in unknown mode\n");
+            break;
+    }
+}
+
+void handle_gest_3(void) {
+    printk("%s", __FUNCTION__);
+    switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 3 triggered in MODE_1\n");
+			handle_mouse_movement(0, +MOVEMENT_SPEED);
+            break;
+
+        case MODE_2:
+            printk("Gesture 3 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 3 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 3 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 3 triggered in unknown mode\n");
+            break;
+    }
+}
+
+void handle_gest_4(void) {
+    printk("%s", __FUNCTION__);
+	switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 4 triggered in MODE_1\n");
+			handle_mouse_movement(0, -MOVEMENT_SPEED);
+            break;
+
+        case MODE_2:
+            printk("Gesture 4 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 4 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 4 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 4 triggered in unknown mode\n");
+            break;
+    }
+}
+
+void handle_gest_5(void) {
+    printk("%s", __FUNCTION__);
+	switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 5 triggered in MODE_1\n");
+            break;
+
+        case MODE_2:
+            printk("Gesture 5 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 5 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 5 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 5 triggered in unknown mode\n");
+            break;
+    }
+}
+
+void handle_gest_6(void) {
+    printk("%s", __FUNCTION__);
+	switch (current_mode) {
+        case MODE_1:
+            printk("Gesture 6 triggered in MODE_1\n");
+            break;
+
+        case MODE_2:
+            printk("Gesture 6 triggered in MODE_2\n");
+            break;
+
+        case MODE_3:
+            printk("Gesture 6 triggered in MODE_3\n");
+            break;
+
+        case MODE_4:
+            printk("Gesture 6 triggered in MODE_4\n");
+            break;
+
+        default:
+            printk("Gesture 6 triggered in unknown mode\n");
+            break;
+    }
+}
+
+const mode_map_t command_table[] = {
     {"M1", MODE_1, handle_mode_palm_pcb},
     {"M2", MODE_2, handle_mode_mouse},
     {"M3", MODE_3, handle_mode_gamepad},
     {"M4", MODE_4, handle_mode_vr},
+    {NULL, MODE_UNKNOWN, NULL},
+};
+
+typedef struct {
+    const char *cmd;
+    manar_gesture_t gesture;
+    mode_handler_t handler;
+} gesture_map_t;
+
+const gesture_map_t gesture_table[] = {
     {"1", GEST_1, handle_gest_1},
     {"2", GEST_2, handle_gest_2},
     {"3", GEST_3, handle_gest_3},
-    {"4", GEST_4, NULL},
+    {"4", GEST_4, handle_gest_4},
     {"5", GEST_5, NULL},
     {"6", GEST_6, NULL},
-	{NULL, MODE_UNKNOWN, NULL},
+    {NULL, GEST_UNKNOWN, NULL},
 };
 
-manar_control_mode_t get_mode_from_string(const char *cmd) {
-    for (int i = 0; mode_table[i].cmd != NULL; i++) {
-        if (strcmp(cmd, mode_table[i].cmd) == 0) {
-            return mode_table[i].mode;
+manar_mode_t get_mode_from_string(const char *cmd) {
+    for (int i = 0; command_table[i].cmd != NULL; i++) {
+        if (strcmp(cmd, command_table[i].cmd) == 0) {
+            return command_table[i].mode;
         }
     }
     return MODE_UNKNOWN;
 }
 
-void handle_command(const char *cmd) {
-    for (int i = 0; mode_table[i].cmd != NULL; i++) {
-        if (strcmp(cmd, mode_table[i].cmd) == 0) {
-            if (mode_table[i].handler != NULL) {
-                mode_table[i].handler();
+manar_gesture_t get_gesture_from_string(const char *cmd) {
+    for (int i = 0; gesture_table[i].cmd != NULL; i++) {
+        if (strcmp(cmd, gesture_table[i].cmd) == 0) {
+            return gesture_table[i].gesture;
+        }
+    }
+    return GEST_UNKNOWN;
+}
+
+void process_uart_input(const char *input) {
+    // Try to match as command
+    for (int i = 0; command_table[i].cmd != NULL; i++) {
+        if (strcmp(input, command_table[i].cmd) == 0) {
+            if (command_table[i].handler) {
+                command_table[i].handler();
             } else {
-                printk("No handler assigned for mode: %s\n", cmd);
+                printk("No handler for command: %s\n", input);
             }
             return;
         }
     }
-    printk("Unknown command: %s\n", cmd);
+
+    // Try to match as gesture
+    for (int i = 0; gesture_table[i].cmd != NULL; i++) {
+        if (strcmp(input, gesture_table[i].cmd) == 0) {
+			current_gesture = gesture_table[i].gesture;
+            if (gesture_table[i].handler) {
+                gesture_table[i].handler();
+            } else {
+                printk("No handler for gesture: %s\n", input);
+            }
+            return;
+        }
+    }
+
+    // Not found in either table
+    printk("Unknown input: %s\n", input);
 }
 
 int main(void)
@@ -1070,7 +1354,8 @@ int main(void)
 
 	printk("Bluetooth initialized\n");
 
-	k_work_init(&hids_work, mouse_handler);
+	k_work_init(&hids_work, mouse_movement_handler);
+	k_work_init(&hids_work_button, mouse_button_handler);
 	k_work_init(&adv_work, advertising_process);
 	if (IS_ENABLED(CONFIG_BT_HIDS_SECURITY_ENABLED)) {
 		k_work_init(&pairing_work, pairing_process);
@@ -1096,7 +1381,7 @@ int main(void)
 			printk(tx_buf);
 			printk("\r\n");
 
-			handle_command(tx_buf);
+			process_uart_input(tx_buf);
 
 		}
 		/* Battery level simulation */
