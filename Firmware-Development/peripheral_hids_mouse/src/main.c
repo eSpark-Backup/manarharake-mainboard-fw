@@ -50,6 +50,9 @@ static int rx_buf_pos;
 #define DEVICE_NAME     CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
 
+#define DEVICE_GAMEPAD  "Nordic_HIDS_gamepad"
+#define DEVICE_GAMEPAD_NAME_LEN (sizeof(DEVICE_GAMEPAD) - 1)
+
 #define BASE_USB_HID_SPEC_VERSION   0x0101
 
 /* Number of pixels by which the cursor is moved when a button is pushed. */
@@ -131,7 +134,12 @@ K_MSGQ_DEFINE(bonds_queue,
 	      4);
 #endif
 
-static const struct bt_data ad[] = {
+const struct bt_data *ad;
+const struct bt_data *sd;
+size_t ad_len;
+size_t sd_len;
+
+static const struct bt_data ad_mouse[] = {
 	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
 		      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
 		      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
@@ -140,8 +148,21 @@ static const struct bt_data ad[] = {
 					  BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
 };
 
-static const struct bt_data sd[] = {
+static const struct bt_data ad_gamepad[] = {
+	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
+		      (964 >> 0) & 0xff,
+		      (964 >> 8) & 0xff),
+	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL),
+					  BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
+};
+
+static const struct bt_data sd_mouse[] = {
 	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
+};
+
+static const struct bt_data sd_gamepad[] = {
+	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_GAMEPAD, DEVICE_GAMEPAD_NAME_LEN),
 };
 
 static struct conn_mode {
@@ -171,6 +192,36 @@ static volatile bool client_connected = false;
 static volatile bool pairing_request = false;
 static volatile bool paired_success = false;
 
+typedef enum {
+    MODE_UNKNOWN = 0,
+    MODE_1,
+    MODE_2,
+    MODE_3,
+    MODE_4,
+} manar_mode_t;
+
+typedef enum {
+    GEST_UNKNOWN = 0,
+    GEST_1,
+    GEST_2,
+    GEST_3,
+    GEST_4,
+    GEST_5,
+    GEST_6,
+} manar_gesture_t;
+
+typedef void (*mode_handler_t)(void);
+
+typedef struct {
+    const char *cmd;
+    manar_mode_t mode;
+    mode_handler_t handler;
+} mode_map_t;
+
+static manar_mode_t current_mode = MODE_UNKNOWN;
+static manar_mode_t last_mode = MODE_UNKNOWN;
+static manar_gesture_t current_gesture = GEST_UNKNOWN;
+
 #if CONFIG_BT_DIRECTED_ADVERTISING
 static void bond_find(const struct bt_bond_info *info, void *user_data)
 {
@@ -194,6 +245,27 @@ static void bond_find(const struct bt_bond_info *info, void *user_data)
 	}
 }
 #endif
+
+static void change_adv_data(manar_mode_t mode) {
+	
+	/* Select ad/sd based on current mode */
+	switch (current_mode) {
+	case MODE_2:
+		ad = ad_mouse;
+		sd = sd_mouse;
+		ad_len = ARRAY_SIZE(ad_mouse);
+		sd_len = ARRAY_SIZE(sd_mouse);
+		break;
+	
+	case MODE_3:
+		ad = ad_gamepad;
+		sd = sd_gamepad;
+		ad_len = ARRAY_SIZE(ad_gamepad);
+		sd_len = ARRAY_SIZE(sd_gamepad);
+		break;
+	}
+	
+}
 
 static void advertising_continue(void)
 {
@@ -232,14 +304,22 @@ static void advertising_continue(void)
 	{
 		int err;
 
+		// if (is_adv_running) {
+		// 	return;
+		// }
 		if (is_adv_running) {
-			return;
+			err = bt_le_adv_stop();
+			if (err) {
+				printk("Advertising failed to stop (err %d)\n", err);
+				return;
+			}
+			is_adv_running = false;
 		}
 
 		adv_param = *BT_LE_ADV_CONN;
 		adv_param.options |= BT_LE_ADV_OPT_ONE_TIME;
-		err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad),
-				  sd, ARRAY_SIZE(sd));
+		err = bt_le_adv_start(&adv_param, ad, ad_len,
+				  sd, sd_len);
 		if (err) {
 			printk("Advertising failed to start (err %d)\n", err);
 			return;
@@ -440,6 +520,15 @@ static void hids_pm_evt_handler(enum bt_hids_pm_evt evt,
 	}
 }
 
+static void hid_deinit(void)
+{
+	int err = 0;
+	printk("%s called!\n", __FUNCTION__);
+	err = bt_hids_uninit(&hids_obj);	
+	if(err != 0) {
+		printk("unable to uninit hid");
+	}
+}
 
 static void hid_init(void)
 {
@@ -448,7 +537,7 @@ static void hid_init(void)
 	struct bt_hids_inp_rep *hids_inp_rep;
 	static const uint8_t mouse_movement_mask[DIV_ROUND_UP(INPUT_REP_MOVEMENT_LEN, 8)] = {0};
 
-	static uint8_t const report_map_gamepad[] = {
+	static const uint8_t report_map_gamepad[] = {
 		0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
 		0x09, 0x05,        // Usage (Game Pad)
 		0xA1, 0x01,        // Collection (Application)
@@ -639,7 +728,7 @@ static void hid_init(void)
 	hids_inp_rep++;
 	hids_inp_rep->size = INPUT_REP_MOVEMENT_LEN;
 	hids_inp_rep->id = INPUT_REP_REF_MOVEMENT_ID;
-	// hids_inp_rep->rep_mask = mouse_movement_mask;
+	hids_inp_rep->rep_mask = mouse_movement_mask;
 	hids_init_param.inp_rep_group_init.cnt++;
 
 	hids_inp_rep++;
@@ -1003,35 +1092,6 @@ void uart_init() {
 	print_uart("Tell me something and press enter:\r\n");
 }
 
-typedef enum {
-    MODE_UNKNOWN = 0,
-    MODE_1,
-    MODE_2,
-    MODE_3,
-    MODE_4,
-} manar_mode_t;
-
-typedef enum {
-    GEST_UNKNOWN = 0,
-    GEST_1,
-    GEST_2,
-    GEST_3,
-    GEST_4,
-    GEST_5,
-    GEST_6,
-} manar_gesture_t;
-
-typedef void (*mode_handler_t)(void);
-
-typedef struct {
-    const char *cmd;
-    manar_mode_t mode;
-    mode_handler_t handler;
-} mode_map_t;
-
-static manar_mode_t current_mode = MODE_UNKNOWN;
-static manar_gesture_t current_gesture = GEST_UNKNOWN;
-
 void handle_mouse_movement(int dx, int dy) {
     int err;
     struct mouse_pos pos;
@@ -1069,24 +1129,68 @@ void handle_mouse_button(uint32_t btn_mask) {
     }
 }
 
+void init_mode(manar_mode_t mode) {
+	switch (mode)
+	{
+	case MODE_1:
+
+		break;
+	
+	case MODE_2:
+		hid_init();
+		break;
+	default:
+		break;
+	}
+}
+
+void deinit_last_mode(manar_mode_t mode) {
+	switch (mode)
+	{
+	case MODE_1:
+
+		break;
+	
+	case MODE_2:
+		hid_deinit();
+		break;
+	default:
+		break;
+	}
+}
+
 
 void handle_mode_palm_pcb(void) {
     printk("%s", __FUNCTION__);
+	last_mode = current_mode;
+	deinit_last_mode(last_mode);
 	current_mode = MODE_1;
 }
 
 void handle_mode_mouse(void) {
     printk("%s", __FUNCTION__);
+	last_mode = current_mode;
+	deinit_last_mode(last_mode);
 	current_mode = MODE_2;
+	/* DIS initialized at system boot with SYS_INIT macro. */
+	hid_init();
+	change_adv_data(current_mode);
+	k_work_submit(&adv_work);
 }
 
 void handle_mode_gamepad(void) {
-    printk("%s", __FUNCTION__);
+	printk("%s", __FUNCTION__);
+	last_mode = current_mode;
+	deinit_last_mode(last_mode);
 	current_mode = MODE_3;
+	change_adv_data(current_mode);
+	k_work_submit(&adv_work);
 }
 
 void handle_mode_vr(void) {
-    printk("%s", __FUNCTION__);
+	printk("%s", __FUNCTION__);
+	last_mode = current_mode;
+	deinit_last_mode(last_mode);
 	current_mode = MODE_4;
 }
 
@@ -1095,12 +1199,12 @@ void handle_gest_1(void) {
 	switch (current_mode) {
         case MODE_1:
             printk("Gesture 1 triggered in MODE_1\n");
+            break;
+			
+		case MODE_2:
+            printk("Gesture 1 triggered in MODE_2\n");
 			// handle_mouse_movement(+MOVEMENT_SPEED, 0);
 			handle_mouse_button(MOUSE_BTN_LEFT);
-            break;
-
-        case MODE_2:
-            printk("Gesture 1 triggered in MODE_2\n");
             break;
 
         case MODE_3:
@@ -1123,12 +1227,12 @@ void handle_gest_2(void) {
 	switch (current_mode) {
         case MODE_1:
             printk("Gesture 2 triggered in MODE_1\n");
+            break;
+			
+			case MODE_2:
+            printk("Gesture 2 triggered in MODE_2\n");
 			// handle_mouse_movement(-MOVEMENT_SPEED, 0);
 			handle_mouse_button(MOUSE_BTN_RIGHT);
-            break;
-
-        case MODE_2:
-            printk("Gesture 2 triggered in MODE_2\n");
             break;
 
         case MODE_3:
@@ -1150,11 +1254,11 @@ void handle_gest_3(void) {
     switch (current_mode) {
         case MODE_1:
             printk("Gesture 3 triggered in MODE_1\n");
-			handle_mouse_movement(0, +MOVEMENT_SPEED);
             break;
-
+			
         case MODE_2:
             printk("Gesture 3 triggered in MODE_2\n");
+			handle_mouse_movement(0, +MOVEMENT_SPEED);
             break;
 
         case MODE_3:
@@ -1176,11 +1280,11 @@ void handle_gest_4(void) {
 	switch (current_mode) {
         case MODE_1:
             printk("Gesture 4 triggered in MODE_1\n");
-			handle_mouse_movement(0, -MOVEMENT_SPEED);
-            break;
+			break;
 
         case MODE_2:
             printk("Gesture 4 triggered in MODE_2\n");
+			handle_mouse_movement(0, -MOVEMENT_SPEED);
             break;
 
         case MODE_3:
@@ -1339,9 +1443,6 @@ int main(void)
 		}
 	}
 
-	/* DIS initialized at system boot with SYS_INIT macro. */
-	hid_init();
-
 	/* UART init */
 	uart_init();
 	printk("uart_init called!\n");
@@ -1356,7 +1457,9 @@ int main(void)
 
 	k_work_init(&hids_work, mouse_movement_handler);
 	k_work_init(&hids_work_button, mouse_button_handler);
+	
 	k_work_init(&adv_work, advertising_process);
+
 	if (IS_ENABLED(CONFIG_BT_HIDS_SECURITY_ENABLED)) {
 		k_work_init(&pairing_work, pairing_process);
 	}
@@ -1365,9 +1468,9 @@ int main(void)
 		settings_load();
 	}
 
-	advertising_start();
+	// advertising_start();
 
-	configure_buttons();
+	// configure_buttons();
 
 	char tx_buf[MSG_SIZE];
 
