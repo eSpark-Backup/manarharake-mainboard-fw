@@ -189,6 +189,78 @@ K_MSGQ_DEFINE(mitm_queue,
 #define LOG_MODULE_NAME peripheral_hid_mouse
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
+struct __attribute__((packed)) report_t {
+    uint8_t dpad;
+    uint8_t capture : 1;
+    uint8_t assistant : 1;
+    uint8_t l2 : 1;
+    uint8_t r2 : 1;
+    uint8_t stadia : 1;
+    uint8_t menu : 1;
+    uint8_t options : 1;
+    uint8_t r3 : 1;
+    uint8_t l3 : 1;
+    uint8_t r1 : 1;
+    uint8_t l1 : 1;
+    uint8_t y : 1;
+    uint8_t x : 1;
+    uint8_t b : 1;
+    uint8_t a : 1;
+    uint8_t padding : 1;
+    uint8_t lx;
+    uint8_t ly;
+    uint8_t rx;
+    uint8_t ry;
+    uint8_t l2_axis;
+    uint8_t r2_axis;
+    uint8_t extra_buttons;
+};
+
+#define REPORT_ID 3
+#define REPORT_ID_IDX 0
+#define REPORT_LEN 10
+
+static struct report_t report;
+static struct report_t prev_report;
+
+static const uint8_t dpad_lut[] = { 0x0F, 0x06, 0x02, 0x0F, 0x00, 0x07, 0x01, 0x00, 0x04, 0x05, 0x03, 0x04, 0x0F, 0x06, 0x02, 0x0F };
+
+BT_HIDS_DEF(hids_gamepad_obj, REPORT_LEN);
+
+K_MSGQ_DEFINE(hids_gamepad_queue, REPORT_LEN, HIDS_QUEUE_SIZE, 4);
+
+#define CONNECTED_SLEEP_TIMEOUT K_SECONDS(600)
+
+static struct bt_conn* active_conn = NULL;
+
+static void sleep_work_fn(struct k_work* work) {
+	#if DT_NODE_HAS_STATUS(DT_ALIAS(expanderreset), okay)
+		// drive expander reset pin low
+		gpio_pin_set_dt(&expander_reset, 1);
+	#endif
+		LOG_INF("Going to sleep...");
+		// sys_poweroff();
+	}
+static K_WORK_DELAYABLE_DEFINE(sleep_work, sleep_work_fn);
+
+static void report_sent_cb(struct bt_conn* conn, void* user_data) {
+    LOG_DBG("");
+}
+
+static void hids_work_fn(struct k_work* work) {
+    uint8_t report[REPORT_LEN];
+    printk("entering %s", __FUNCTION__);
+    while (!k_msgq_get(&hids_gamepad_queue, report, K_NO_WAIT)) {
+        if (active_conn != NULL) {
+            k_work_reschedule(&sleep_work, CONNECTED_SLEEP_TIMEOUT);
+            LOG_DBG("Sending report...");
+            bt_hids_inp_rep_send(&hids_gamepad_obj, active_conn, REPORT_ID_IDX, report, REPORT_LEN, report_sent_cb);
+        }
+    }
+}
+static K_WORK_DEFINE(hids_gamepad_work, hids_work_fn);
+
+
 static volatile bool client_connected = false;
 static volatile bool pairing_request = false;
 static volatile bool paired_success = false;
@@ -247,16 +319,26 @@ static void bond_find(const struct bt_bond_info *info, void *user_data)
 }
 #endif
 
+void delete_bonded_devices(void)
+{
+    int err = bt_unpair(BT_ID_DEFAULT, NULL); // NULL deletes all
+    if (err) {
+        LOG_ERR("Failed to delete bonds (err %d)\n", err);
+    } else {
+        LOG_INF("All bonds deleted\n");
+    }
+}
+
 static void change_adv_data(manar_mode_t mode) {
 	
 	/* Select ad/sd based on current mode */
 	switch (current_mode) {
-	case MODE_2:
-		ad = ad_mouse;
-		sd = sd_mouse;
-		ad_len = ARRAY_SIZE(ad_mouse);
-		sd_len = ARRAY_SIZE(sd_mouse);
-		break;
+	// case MODE_2:
+		// ad = ad_mouse;
+		// sd = sd_mouse;
+		// ad_len = ARRAY_SIZE(ad_mouse);
+		// sd_len = ARRAY_SIZE(sd_mouse);
+		// break;
 	
 	case MODE_3:
 		ad = ad_gamepad;
@@ -268,11 +350,24 @@ static void change_adv_data(manar_mode_t mode) {
 	
 }
 
+void advertisment_stop() {
+    if (is_adv_running) {
+        int err = bt_le_adv_stop();
+        if (err) {
+            printk("Advertising failed to stop (err %d)\n", err);
+            return;
+        }
+        is_adv_running = false;
+        printk("Advertising Stopped!");
+    }
+}
+
 static void advertising_continue(void)
 {
 	struct bt_le_adv_param adv_param;
 
-#if CONFIG_BT_DIRECTED_ADVERTISING
+#if 1
+// #if CONFIG_BT_DIRECTED_ADVERTISING
 	bt_addr_le_t addr;
 
 	if (!k_msgq_get(&bonds_queue, &addr, K_NO_WAIT)) {
@@ -399,6 +494,65 @@ static bool is_conn_slot_free(void)
 	return false;
 }
 
+static void handle_buttons_off() {
+	
+    report.menu = 0;
+    report.options = 0;
+    report.stadia = 0;
+    report.capture = 0;
+    report.l3 = 0;
+    report.r3 = 0;
+    report.x = 0;
+    report.y = 0;
+    report.r1 = 0;
+    report.l1 = 0;
+    report.a = 0;
+    report.b = 0;
+    report.r2 = 0;
+    report.r2_axis = report.r2 * 255;
+    report.l2 = 1;
+    report.l2_axis = report.l2 * 255;
+
+    int dpad = 1 | (1) << 1 | (0) << 2 | (1) << 3;
+
+    report.dpad = dpad_lut[dpad];
+
+    if (memcmp(&prev_report, &report, sizeof(report))) {
+        k_msgq_put(&hids_gamepad_queue, &report, K_NO_WAIT);
+        k_work_submit(&hids_gamepad_work);
+        memcpy(&prev_report, &report, sizeof(report));
+    }
+}
+
+static void handle_buttons() {
+	
+    report.menu = 1;
+    report.options = 1;
+    report.stadia = 1;
+    report.capture = 1;
+    report.l3 = 1;
+    report.r3 = 1;
+    report.x = 1;
+    report.y = 1;
+    report.r1 = 1;
+    report.l1 = 1;
+    report.a = 1;
+    report.b = 1;
+    report.r2 = 1;
+    report.r2_axis = report.r2 * 255;
+    report.l2 = 1;
+    report.l2_axis = report.l2 * 255;
+
+    int dpad = 1 | (0) | (1) | (1);
+
+    report.dpad = dpad_lut[dpad];
+
+    if (memcmp(&prev_report, &report, sizeof(report))) {
+        k_msgq_put(&hids_gamepad_queue, &report, K_NO_WAIT);
+        k_work_submit(&hids_gamepad_work);
+        memcpy(&prev_report, &report, sizeof(report));
+    }
+}
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
@@ -421,12 +575,19 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	printk("Connected %s\n", addr);
 
-	err = bt_hids_connected(&hids_obj, conn);
+	if(current_mode == MODE_2){
+		err = bt_hids_connected(&hids_obj, conn);
+	}
+	if(current_mode == MODE_3){
+		err = bt_hids_connected(&hids_gamepad_obj, conn);
+	}
 
 	if (err) {
 		printk("Failed to notify HID service about connection\n");
 		return;
 	}
+	
+	active_conn = conn;
 
 	insert_conn_object(conn);
 
@@ -445,7 +606,15 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	printk("Disconnected from %s, reason 0x%02x %s\n", addr, reason, bt_hci_err_to_str(reason));
 
-	err = bt_hids_disconnected(&hids_obj, conn);
+	if(current_mode == MODE_2){
+		err = bt_hids_disconnected(&hids_obj, conn);
+	}
+	if(current_mode == MODE_3){
+		err = bt_hids_disconnected(&hids_gamepad_obj, conn);
+	}
+
+	// err = bt_hids_disconnected(&hids_obj, conn);
+	active_conn = NULL;
 
 	if (err) {
 		printk("Failed to notify HID service about disconnection\n");
@@ -459,6 +628,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	}
 
 	advertising_start();
+    paired_success = false;
+    delete_bonded_devices();
 }
 
 
@@ -522,13 +693,23 @@ static void hids_pm_evt_handler(enum bt_hids_pm_evt evt,
 	}
 }
 
+static void hid_gamepad_deinit(void)
+{
+	int err = 0;
+	printk("%s called!\b", __FUNCTION__);
+	err = bt_hids_uninit(&hids_gamepad_obj);
+	if(err != 0) {
+		printk("Unable to unint gamepad hid err no %d", err);
+	}
+}
+
 static void hid_deinit(void)
 {
 	int err = 0;
 	printk("%s called!\n", __FUNCTION__);
 	err = bt_hids_uninit(&hids_obj);	
 	if(err != 0) {
-		printk("unable to uninit hid");
+		printk("unable to uninit hid err no %d", err);
 	}
 }
 
@@ -537,7 +718,6 @@ static void hid_gamepad_init(void)
 	int err;
 	struct bt_hids_init_param hids_init_param = { 0 };
 	struct bt_hids_inp_rep *hids_inp_rep;
-	static const uint8_t mouse_movement_mask[DIV_ROUND_UP(INPUT_REP_MOVEMENT_LEN, 8)] = {0};
 
 	static const uint8_t report_map_gamepad[] = {
 		0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
@@ -644,8 +824,8 @@ static void hid_gamepad_init(void)
 				      BT_HIDS_NORMALLY_CONNECTABLE);
 
 	hids_inp_rep = &hids_init_param.inp_rep_group_init.reports[0];
-	hids_inp_rep->size = INPUT_REP_BUTTONS_LEN;
-	hids_inp_rep->id = INPUT_REP_REF_BUTTONS_ID;
+	hids_inp_rep->size = sizeof(struct report_t);
+	hids_inp_rep->id = REPORT_ID;
 	hids_init_param.inp_rep_group_init.cnt++;
 
 	// hids_inp_rep++;
@@ -660,9 +840,9 @@ static void hid_gamepad_init(void)
 	// hids_init_param.inp_rep_group_init.cnt++;
 
 	// hids_init_param.is_mouse = true;
-	hids_init_param.pm_evt_handler = hids_pm_evt_handler;
+	// hids_init_param.pm_evt_handler = hids_pm_evt_handler;
 
-	err = bt_hids_init(&hids_obj, &hids_init_param);
+	err = bt_hids_init(&hids_gamepad_obj, &hids_init_param);
 	__ASSERT(err == 0, "HIDS initialization failed\n");
 }
 
@@ -672,102 +852,6 @@ static void hid_init(void)
 	struct bt_hids_init_param hids_init_param = { 0 };
 	struct bt_hids_inp_rep *hids_inp_rep;
 	static const uint8_t mouse_movement_mask[DIV_ROUND_UP(INPUT_REP_MOVEMENT_LEN, 8)] = {0};
-
-	static const uint8_t report_map_gamepad[] = {
-		0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
-		0x09, 0x05,        // Usage (Game Pad)
-		0xA1, 0x01,        // Collection (Application)
-		0x85, 0x03,        //   Report ID (3)
-		0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
-		0x75, 0x04,        //   Report Size (4)
-		0x95, 0x01,        //   Report Count (1)
-		0x25, 0x07,        //   Logical Maximum (7)
-		0x46, 0x3B, 0x01,  //   Physical Maximum (315)
-		0x65, 0x14,        //   Unit (System: English Rotation, Length: Centimeter)
-		0x09, 0x39,        //   Usage (Hat switch)
-		0x81, 0x42,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,Null State)
-		0x45, 0x00,        //   Physical Maximum (0)
-		0x65, 0x00,        //   Unit (None)
-		0x75, 0x01,        //   Report Size (1)
-		0x95, 0x04,        //   Report Count (4)
-		0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x05, 0x09,        //   Usage Page (Button)
-		0x15, 0x00,        //   Logical Minimum (0)
-		0x25, 0x01,        //   Logical Maximum (1)
-		0x75, 0x01,        //   Report Size (1)
-		0x95, 0x0F,        //   Report Count (15)
-		0x09, 0x12,        //   Usage (0x12)
-		0x09, 0x11,        //   Usage (0x11)
-		0x09, 0x14,        //   Usage (0x14)
-		0x09, 0x13,        //   Usage (0x13)
-		0x09, 0x0D,        //   Usage (0x0D)
-		0x09, 0x0C,        //   Usage (0x0C)
-		0x09, 0x0B,        //   Usage (0x0B)
-		0x09, 0x0F,        //   Usage (0x0F)
-		0x09, 0x0E,        //   Usage (0x0E)
-		0x09, 0x08,        //   Usage (0x08)
-		0x09, 0x07,        //   Usage (0x07)
-		0x09, 0x05,        //   Usage (0x05)
-		0x09, 0x04,        //   Usage (0x04)
-		0x09, 0x02,        //   Usage (0x02)
-		0x09, 0x01,        //   Usage (0x01)
-		0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x75, 0x01,        //   Report Size (1)
-		0x95, 0x01,        //   Report Count (1)
-		0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x05, 0x01,        //   Usage Page (Generic Desktop Ctrls)
-		0x15, 0x01,        //   Logical Minimum (1)
-		0x26, 0xFF, 0x00,  //   Logical Maximum (255)
-		0x09, 0x01,        //   Usage (Pointer)
-		0xA1, 0x00,        //   Collection (Physical)
-		0x09, 0x30,        //     Usage (X)
-		0x09, 0x31,        //     Usage (Y)
-		0x75, 0x08,        //     Report Size (8)
-		0x95, 0x02,        //     Report Count (2)
-		0x81, 0x02,        //     Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0xC0,              //   End Collection
-		0x09, 0x01,        //   Usage (Pointer)
-		0xA1, 0x00,        //   Collection (Physical)
-		0x09, 0x32,        //     Usage (Z)
-		0x09, 0x35,        //     Usage (Rz)
-		0x75, 0x08,        //     Report Size (8)
-		0x95, 0x02,        //     Report Count (2)
-		0x81, 0x02,        //     Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0xC0,              //   End Collection
-		0x05, 0x02,        //   Usage Page (Sim Ctrls)
-		0x75, 0x08,        //   Report Size (8)
-		0x95, 0x02,        //   Report Count (2)
-		0x15, 0x00,        //   Logical Minimum (0)
-		0x26, 0xFF, 0x00,  //   Logical Maximum (255)
-		0x09, 0xC5,        //   Usage (Brake)
-		0x09, 0xC4,        //   Usage (Accelerator)
-		0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x05, 0x0C,        //   Usage Page (Consumer)
-		0x15, 0x00,        //   Logical Minimum (0)
-		0x25, 0x01,        //   Logical Maximum (1)
-		0x09, 0xE9,        //   Usage (Volume Increment)
-		0x09, 0xEA,        //   Usage (Volume Decrement)
-		0x75, 0x01,        //   Report Size (1)
-		0x95, 0x02,        //   Report Count (2)
-		0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x09, 0xCD,        //   Usage (Play/Pause)
-		0x95, 0x01,        //   Report Count (1)
-		0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-		0x95, 0x05,        //   Report Count (5)
-		0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-	
-		/*
-			0x85, 0x05,                    //   Report ID (5)
-			0x06, 0x0F, 0x00,              //   Usage Page (PID Page)
-			0x09, 0x97,                    //   Usage (0x97)
-			0x75, 0x10,                    //   Report Size (16)
-			0x95, 0x02,                    //   Report Count (2)
-			0x27, 0xFF, 0xFF, 0x00, 0x00,  //   Logical Maximum (65535)
-			0x91, 0x02,                    //   Output (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
-		*/
-	
-		0xC0,  // End Collection
-	};
 
 	static const uint8_t report_map_mouse[] = {
 		0x05, 0x01,     /* Usage Page (Generic Desktop) */
@@ -1284,15 +1368,19 @@ void deinit_last_mode(manar_mode_t mode) {
 	switch (mode)
 	{
 	case MODE_1:
-		hid_deinit();
 		break;
 	
 	case MODE_2:
 		hid_deinit();
 		break;
+
+	case MODE_3:
+		hid_gamepad_deinit();
 	default:
+        printk("No mode to deinitialize!");
 		break;
 	}
+    // bt_disable();
 }
 
 
@@ -1300,32 +1388,54 @@ void handle_mode_palm_pcb(void) {
     printk("%s", __FUNCTION__);
 	last_mode = current_mode;
 	deinit_last_mode(last_mode);
+    current_mode = MODE_4;
+	change_adv_data(current_mode);
 	current_mode = MODE_1;
 }
 
 void handle_mode_mouse(void) {
     printk("%s", __FUNCTION__);
 	last_mode = current_mode;
+    advertisment_stop();
 	deinit_last_mode(last_mode);
 	current_mode = MODE_2;
 	/* DIS initialized at system boot with SYS_INIT macro. */
 	// hids_obj 								       
 	hids_obj.gp.attr_array_size = CONFIG_BT_HIDS_ATTR_MAX;
 	      
+    // int err = bt_enable(NULL);
+
+	// if (err) {
+	// 	printk("Bluetooth init failed (err %d)\n", err);
+	// 	return;
+	// }
+
+	printk("Bluetooth initialized\n");
+
 	hid_init();
+
 	change_adv_data(current_mode);
 	k_work_submit(&adv_work);
 }
 
 void handle_mode_gamepad(void) {
-	printk("%s", __FUNCTION__);
+    printk("%s", __FUNCTION__);
 	last_mode = current_mode;
+    advertisment_stop();
 	deinit_last_mode(last_mode);
 	current_mode = MODE_3;
-	hids_obj.gp.attr_array_size = CONFIG_BT_HIDS_ATTR_MAX;
+	hids_gamepad_obj.gp.attr_array_size = CONFIG_BT_HIDS_ATTR_MAX;
+    
+    // int err = bt_enable(NULL);
+	// if (err) {
+    //     printk("Bluetooth init failed (err %d)\n", err);
+	// 	return 0;
+	// }
+	// printk("Bluetooth initialized\n");
 
-	hid_gamepad_init();
 	change_adv_data(current_mode);
+	hid_gamepad_init();
+    
 	k_work_submit(&adv_work);
 }
 
@@ -1351,10 +1461,12 @@ void handle_gest_1(void) {
 
         case MODE_3:
             printk("Gesture 1 triggered in MODE_3\n");
+            handle_buttons();
             break;
-
+            
         case MODE_4:
             printk("Gesture 1 triggered in MODE_4\n");
+            handle_buttons_off();
             break;
 
         default:
@@ -1548,21 +1660,37 @@ void process_uart_input(const char *input) {
         }
     }
 
-    // Try to match as gesture
-    for (int i = 0; gesture_table[i].cmd != NULL; i++) {
-        if (strcmp(input, gesture_table[i].cmd) == 0) {
-			current_gesture = gesture_table[i].gesture;
-            if (gesture_table[i].handler) {
-                gesture_table[i].handler();
-            } else {
-                printk("No handler for gesture: %s\n", input);
+    if(paired_success) {
+        // Try to match as gesture
+        for (int i = 0; gesture_table[i].cmd != NULL; i++) {
+            if (strcmp(input, gesture_table[i].cmd) == 0) {
+                current_gesture = gesture_table[i].gesture;
+                if (gesture_table[i].handler) {
+                    gesture_table[i].handler();
+                } else {
+                    printk("No handler for gesture: %s\n", input);
+                }
+                return;
             }
-            return;
         }
+    }
+    else {
+        printk("No Piared Devices for Control!");
+        return;
     }
 
     // Not found in either table
     printk("Unknown input: %s\n", input);
+}
+
+static void report_init() {
+    memset(&report, 0, sizeof(report));
+    report.dpad = 8;
+    report.lx = 0x80;
+    report.ly = 0x80;
+    report.rx = 0x80;
+    report.ry = 0x80;
+    memcpy(&prev_report, &report, sizeof(report));
 }
 
 int main(void)
@@ -1589,27 +1717,33 @@ int main(void)
 	uart_init();
 	printk("uart_init called!\n");
 
-	int ret;
-	
-	static bt_addr_le_t addr;
-	char buf[BT_ADDR_LE_STR_LEN] = {0};
+	report_init();
 
-	BT_ADDR_SET_STATIC(&addr.a);
-	addr.type = BT_ADDR_LE_PUBLIC;
-
-	bt_addr_le_to_str(&addr, buf, ARRAY_SIZE(buf));
-	LOG_INF("Get FICR MAC addr is: %s", buf);
-
-	if (ret < 0) {
-		LOG_ERR("Failed to create ID %d", ret);
-		return ret;
-	}
-
-	uint8_t custom_irk[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
-
-	bt_id_create(&addr, custom_irk);
+    {
+        // int ret;
+        
+        
+        // static bt_addr_le_t addr;
+        // char buf[BT_ADDR_LE_STR_LEN] = {0};
+        
+        // BT_ADDR_SET_STATIC(&addr.a);
+        // addr.type = BT_ADDR_LE_PUBLIC;
+        
+        // bt_addr_le_to_str(&addr, buf, ARRAY_SIZE(buf));
+        // LOG_INF("Get FICR MAC addr is: %s", buf);
+        
+        // if (ret < 0) {
+        //     LOG_ERR("Failed to create ID %d", ret);
+        //     return ret;
+        // }
+        
+        // uint8_t custom_irk[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+        
+        // bt_id_create(&addr, custom_irk);
+    }
 
 	err = bt_enable(NULL);
+    delete_bonded_devices();
 
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
@@ -1651,7 +1785,12 @@ int main(void)
 
 		}
 		/* Battery level simulation */
-		bas_notify();
+		// bas_notify();
+        // if(current_mode == MODE_3) {
+        //     handle_buttons();
+		// 	k_sleep(K_MSEC(1000));
+        //     handle_buttons_off();
+        // }
 		printk("Running\n");
 		if(pairing_request)
 		{
