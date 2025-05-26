@@ -84,7 +84,7 @@ struct mouse_pos {
 	int16_t y_val;
 };
 
-#define CHK(X) ({ int err = X; if (err != 0) { LOG_ERR("%s returned %d (%s:%d)", #X, err, __FILE__, __LINE__); } err == 0; })
+// #define CHK(X) ({ int err = X; if (err != 0) { LOG_ERR("%s returned %d (%s:%d)", #X, err, __FILE__, __LINE__); } err == 0; })
 
 #define REPORT_ID 3
 #define REPORT_ID_IDX 0
@@ -581,18 +581,20 @@ static void hid_init(void)
 }
 
 static void report_sent_cb(struct bt_conn* conn, void* user_data) {
-    LOG_DBG("");
+    // LOG_DBG("");
 }
 
 static void hids_work_fn(struct k_work* work) {
     uint8_t report[REPORT_LEN];
 
     while (!k_msgq_get(&hids_queue, report, K_NO_WAIT)) {
-        if (conn_mode[i].conn != NULL) {
-            // k_work_reschedule(&sleep_work, CONNECTED_SLEEP_TIMEOUT);
-            LOG_DBG("Sending report...");
-            CHK(bt_hids_inp_rep_send(&hids_obj, conn_mode[i].conn, REPORT_ID_IDX, report, REPORT_LEN, report_sent_cb));
-        }
+		for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+			if (conn_mode[i].conn != NULL) {
+				// k_work_reschedule(&sleep_work, CONNECTED_SLEEP_TIMEOUT);
+				printk("Sending report...");
+				bt_hids_inp_rep_send(&hids_obj, conn_mode[i].conn, REPORT_ID_IDX, report, REPORT_LEN, report_sent_cb);
+			}	
+		}
     }
 }
 static K_WORK_DEFINE(hids_work, hids_work_fn);
@@ -612,11 +614,11 @@ static void handle_buttons(int val) {
     report.b = val;
     report.r2 = val;
     report.r2_axis = report.r2 * 255;
-    report.l2 = gpio_pin_get_dt(&buttons[17]);
+    report.l2 = val;
     report.l2_axis = report.l2 * 255;
 
     // int dpad = gpio_pin_get_dt(&buttons[6]) | (gpio_pin_get_dt(&buttons[8]) << 1) | (gpio_pin_get_dt(&buttons[9]) << 2) | (gpio_pin_get_dt(&buttons[7]) << 3);
-    int dpad = val | (val << 1) | (val << 2) | (val << 3);
+    int dpad = val | (0 << 1) | (0 << 2) | (0 << 3);
 
     report.dpad = dpad_lut[dpad];
 
@@ -929,7 +931,7 @@ int main(void)
 
 	printk("Bluetooth initialized\n");
 
-	k_work_init(&hids_work, mouse_handler);
+	// k_work_init(&hids_work, mouse_handler);
 	k_work_init(&adv_work, advertising_process);
 	if (IS_ENABLED(CONFIG_BT_HIDS_SECURITY_ENABLED)) {
 		k_work_init(&pairing_work, pairing_process);
