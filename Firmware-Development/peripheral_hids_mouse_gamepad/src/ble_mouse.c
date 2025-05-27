@@ -322,7 +322,7 @@ static void mouse_movement_send(int16_t x_delta, int16_t y_delta)
 static void mouse_movement_handler(struct k_work *work)
 {
 	struct mouse_pos pos;
-	printk("%s called", __FUNCTION__);
+	// printk("%s called", __FUNCTION__);
 	while (!k_msgq_get(&hids_movement_queue, &pos, K_NO_WAIT)) {
 		mouse_movement_send(pos.x_val, pos.y_val);
 	}
@@ -331,7 +331,7 @@ static void mouse_movement_handler(struct k_work *work)
 static void mouse_button_handler(struct k_work *work)
 {
 	struct mouse_button sbutton_mask;
-	printk("%s called", __FUNCTION__);
+	// printk("%s called", __FUNCTION__);
 	while (!k_msgq_get(&hids_button_queue, &sbutton_mask, K_NO_WAIT)) {
 		mouse_button_send(sbutton_mask.button_mask);
 	}
