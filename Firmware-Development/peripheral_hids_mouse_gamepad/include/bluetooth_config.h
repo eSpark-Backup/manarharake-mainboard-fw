@@ -3,11 +3,19 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <bluetooth/services/hids.h>
 
-#define DEVICE_NAME     CONFIG_BT_DEVICE_NAME
-#define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
+
+#define MOUSE_DEVICE_NAME     "Nordic_HIDS_mouse"
+#define MOUSE_DEVICE_NAME_LEN (sizeof(MOUSE_DEVICE_NAME) - 1)
+
+#define GAMEPAD_DEVICE_NAME     CONFIG_BT_DEVICE_NAME
+#define GAMEPAD_DEVICE_NAME_LEN (sizeof(MOUSE_DEVICE_NAME) - 1)
 
 #define BASE_USB_HID_SPEC_VERSION   0x0101
+
+/* HIDs queue size. */
+#define HIDS_QUEUE_SIZE 10
 
 /* Key used to move cursor left */
 #define KEY_LEFT_MASK   DK_BTN1_MSK
@@ -25,6 +33,13 @@
 extern struct bt_conn_auth_cb conn_auth_callbacks;
 extern struct bt_conn_auth_info_cb conn_auth_info_callbacks;
 
+typedef struct {
+    struct bt_data *ad_ptr;
+    size_t ad_len;
+    struct bt_data *sd_ptr;
+    size_t sd_len;
+}ble_config_t;
+
 struct pairing_data_mitm {
 	struct bt_conn *conn;
 	unsigned int passkey;
@@ -36,6 +51,8 @@ struct conn_mode {
 };
 
 extern struct conn_mode conn_mode[CONFIG_BT_HIDS_MAX_CLIENT_COUNT];
+
+extern bool piaring_success;
 
 // extern struct conn_mode {
 // 	struct bt_conn *conn;
@@ -52,6 +69,10 @@ void initialize_bluetooth(void* hids_obj_ptr);
 void advertising_start(void);
 void configure_buttons(void (*func_ptr)(int32_t button_state, uint32_t has_changed));
 void delete_bonded_devices(void);
+void hids_pm_evt_handler(enum bt_hids_pm_evt evt,
+    struct bt_conn *conn);
+void ble_config_set_ad_sd_data(ble_config_t sd_ad_data);
+
 
 #ifdef __cplusplus
 }

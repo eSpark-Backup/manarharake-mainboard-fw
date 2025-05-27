@@ -1,6 +1,8 @@
 #ifndef BLE_GAMEPAD_H
 #define BLE_GAMEPAD_H
 
+#include "bluetooth_config.h"
+
 struct __attribute__((packed)) report_t {
     uint8_t dpad;
     uint8_t capture : 1;
@@ -34,5 +36,6 @@ void ble_gamepad_report_init();
 void ble_gamepad_handle_buttons(int val);
 void ble_gamepad_hid_init(void);
 void ble_gamepad_hid_unint(void);
+ble_config_t ble_gamepad_get_ad_sd_data();
 
 #endif //BLE_GAMEPAD_H

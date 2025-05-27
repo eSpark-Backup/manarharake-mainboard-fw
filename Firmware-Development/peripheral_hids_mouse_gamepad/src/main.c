@@ -30,6 +30,7 @@
 
 #include "bluetooth_config.h"
 #include "ble_gamepad.h"
+#include "ble_mouse.h"
 
 /* HIDS instance. */
 // BT_HIDS_DEF(hids_obj,
@@ -119,15 +120,18 @@ void manar_mode_next()
 
 int main(void)
 {
-	// printk("current Manar mode = %d\n", manar_mode);
-	// k_sleep(K_SECONDS(20));
-	// manar_mode_next();
-	// printk("updated Manar mode = %d\n", manar_mode);
-	// k_sleep(K_SECONDS(2));
+	printk("Application Started\n");
+
+	printk("current Manar mode = %d\n", manar_mode);
+	k_sleep(K_SECONDS(20));
+	manar_mode_next();
+	printk("updated Manar mode = %d\n", manar_mode);
+	k_sleep(K_SECONDS(2));
 	// NVIC_SystemReset();
 
 	//currently working on mousepad so using this.
-	manar_mode = MANAR_MODE_GAMEPAD;
+	// manar_mode = MANAR_MODE_GAMEPAD;
+	manar_mode = MANAR_MODE_MOUSE;
 
 	// /* DIS initialized at system boot with SYS_INIT macro. */
 	
@@ -164,14 +168,24 @@ int main(void)
 			break;
 		
 		case MANAR_MODE_MOUSE:
+			printk("MANAR_MODE_MOUSE STARTING\n");
+			ble_config_set_ad_sd_data(ble_mouse_get_ad_sd_data());
+			initialize_bluetooth(ble_mouse_return_hids_object());
+			ble_mouse_hid_init();		
+			configure_buttons(ble_mouse_button_changed);		
+			delete_bonded_devices();
+			printk("MANAR_MODE_MOUSE INITIALIZED\n");
 			break;
-		
+			
 		case MANAR_MODE_GAMEPAD:
+			printk("MANAR_MODE_GAMEPAD STARTING\n");
+			ble_config_set_ad_sd_data(ble_gamepad_get_ad_sd_data());
 			initialize_bluetooth(ble_gamepad_return_hids_object());
 			ble_gamepad_report_init();
 			ble_gamepad_hid_init();		
 			configure_buttons(ble_gamepad_button_changed);		
 			delete_bonded_devices();
+			printk("MANAR_MODE_GAMEPAD INTITIALIZED\n");
 			break;
 		
 		default:
@@ -187,15 +201,28 @@ int main(void)
 				break;
 			
 			case MANAR_MODE_MOUSE:
+				printk("MANAR_MODE_MOUSE\n");
+				if(conn_mode[0].conn && piaring_success)
+				{
+					ble_mouse_handle_movement(10, 0);
+				}
+				else
+				{
+					printk("No connection established!");
+				}
+				k_sleep(K_SECONDS(1));
+				// bas_notify();
+				// ble_mouse_handle_movement(-10, 0);
+				// k_sleep(K_SECONDS(1));
 				break;
 			
 			case MANAR_MODE_GAMEPAD:
 				printk("MANAR_MODE_GAMEPAD\n");
-				k_sleep(K_SECONDS(1));
 				ble_gamepad_handle_buttons(0);
-				bas_notify();
 				k_sleep(K_SECONDS(1));
+				bas_notify();
 				ble_gamepad_handle_buttons(1);
+				k_sleep(K_SECONDS(1));
 				break;
 			
 			default:

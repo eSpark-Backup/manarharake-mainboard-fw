@@ -21,18 +21,23 @@
 #include <bluetooth/services/hids.h>
 #include <zephyr/bluetooth/services/dis.h>
 
-static const struct bt_data ad[] = {
-	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
-		      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
-		      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
-	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL),
-					  BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
-};
+// static const struct bt_data ad[] = {
+// 	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
+// 		      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
+// 		      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
+// 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+// 	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL),
+// 					  BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
+// };
 
-static const struct bt_data sd[] = {
-	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
-};
+// static const struct bt_data sd[] = {
+// 	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
+// };
+
+const struct bt_data *ad;
+const struct bt_data *sd;
+size_t ad_len;
+size_t sd_len;
 
 #if CONFIG_BT_DIRECTED_ADVERTISING
 /* Bonded address queue. */
@@ -43,6 +48,8 @@ K_MSGQ_DEFINE(bonds_queue,
 #endif
 
 static volatile bool is_adv_running;
+
+bool piaring_success = false;
 
 static struct k_work adv_work;
 
@@ -128,8 +135,8 @@ void advertising_continue(void)
 
 		adv_param = *BT_LE_ADV_CONN;
 		adv_param.options |= BT_LE_ADV_OPT_ONE_TIME;
-		err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad),
-				  sd, ARRAY_SIZE(sd));
+		err = bt_le_adv_start(&adv_param, ad, ad_len,
+				  sd, sd_len);
 		if (err) {
 			printk("Advertising failed to start (err %d)\n", err);
 			return;
@@ -394,6 +401,7 @@ void pairing_complete(struct bt_conn *conn, bool bonded)
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	printk("Pairing completed: %s, bonded: %d\n", addr, bonded);
+    piaring_success = true;
 }
 
 
@@ -415,6 +423,8 @@ void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 
 	printk("Pairing failed conn: %s, reason %d %s\n", addr, reason,
 	       bt_security_err_to_str(reason));
+    
+    piaring_success = false;
 }
 
 struct bt_conn_auth_cb conn_auth_callbacks = {
@@ -531,6 +541,14 @@ void delete_bonded_devices(void)
     } else {
         printk("All bonds deleted\n");
     }
+}
+
+void ble_config_set_ad_sd_data(ble_config_t sd_ad_data)
+{
+    ad = sd_ad_data.ad_ptr;
+    ad_len = sd_ad_data.ad_len;
+    sd = sd_ad_data.sd_ptr;
+    sd_len = sd_ad_data.sd_len;
 }
 
 #ifdef __cplusplus

@@ -23,33 +23,6 @@
 #include <dk_buttons_and_leds.h>
 
 #include "ble_gamepad.h"
-#include "bluetooth_config.h"
-
-/* Number of pixels by which the cursor is moved when a button is pushed. */
-#define MOVEMENT_SPEED              5
-/* Number of input reports in this application. */
-#define INPUT_REPORT_COUNT          3
-/* Length of Mouse Input Report containing button data. */
-#define INPUT_REP_BUTTONS_LEN       3
-/* Length of Mouse Input Report containing movement data. */
-#define INPUT_REP_MOVEMENT_LEN      3
-/* Length of Mouse Input Report containing media player data. */
-#define INPUT_REP_MEDIA_PLAYER_LEN  1
-/* Index of Mouse Input Report containing button data. */
-#define INPUT_REP_BUTTONS_INDEX     0
-/* Index of Mouse Input Report containing movement data. */
-#define INPUT_REP_MOVEMENT_INDEX    1
-/* Index of Mouse Input Report containing media player data. */
-#define INPUT_REP_MPLAYER_INDEX     2
-/* Id of reference to Mouse Input Report containing button data. */
-#define INPUT_REP_REF_BUTTONS_ID    1
-/* Id of reference to Mouse Input Report containing movement data. */
-#define INPUT_REP_REF_MOVEMENT_ID   2
-/* Id of reference to Mouse Input Report containing media player data. */
-#define INPUT_REP_REF_MPLAYER_ID    3
-
-/* HIDs queue size. */
-#define HIDS_QUEUE_SIZE 10
 
 #define REPORT_ID 3
 #define REPORT_ID_IDX 0
@@ -64,11 +37,35 @@ static struct report_t prev_report;
 
 static const uint8_t dpad_lut[] = { 0x0F, 0x06, 0x02, 0x0F, 0x00, 0x07, 0x01, 0x00, 0x04, 0x05, 0x03, 0x04, 0x0F, 0x06, 0x02, 0x0F };
 
-/* gamepad buuton queue. */
+/* gamepad button queue. */
 K_MSGQ_DEFINE(hids_queue,
     REPORT_LEN,
     HIDS_QUEUE_SIZE,
     4);
+
+static const struct bt_data ad_gamepad[] = {
+    BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
+                (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
+                (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
+    BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+    BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL),
+                        BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
+};
+
+static const struct bt_data sd_gamepad[] = {
+    BT_DATA(BT_DATA_NAME_COMPLETE, GAMEPAD_DEVICE_NAME, GAMEPAD_DEVICE_NAME_LEN),
+};
+
+ble_config_t ble_gamepad_get_ad_sd_data()
+{
+    ble_config_t gamepad_ad_sd;
+    gamepad_ad_sd.ad_ptr = ad_gamepad;
+    gamepad_ad_sd.sd_ptr = sd_gamepad;
+    gamepad_ad_sd.ad_len = ARRAY_SIZE(ad_gamepad);
+    gamepad_ad_sd.sd_len = ARRAY_SIZE(sd_gamepad);
+
+    return gamepad_ad_sd;
+}
 
 void* ble_gamepad_return_hids_object()
 {
@@ -80,7 +77,6 @@ void ble_gamepad_hid_init(void)
 	int err;
 	struct bt_hids_init_param hids_init_param = { 0 };
 	struct bt_hids_inp_rep *hids_inp_rep;
-	static const uint8_t mouse_movement_mask[DIV_ROUND_UP(INPUT_REP_MOVEMENT_LEN, 8)] = {0};
 
 	static uint8_t const report_map[] = {
 		0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
