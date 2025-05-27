@@ -523,6 +523,16 @@ void initialize_bluetooth(void* hids_obj_ptr)
 	printk("Bluetooth initialized\n");
 }
 
+void delete_bonded_devices(void)
+{
+    int err = bt_unpair(BT_ID_DEFAULT, NULL); // NULL deletes all
+    if (err) {
+        printk("Failed to delete bonds (err %d)\n", err);
+    } else {
+        printk("All bonds deleted\n");
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

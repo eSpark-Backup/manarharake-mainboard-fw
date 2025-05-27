@@ -51,6 +51,7 @@ extern "C" {
 void initialize_bluetooth(void* hids_obj_ptr);
 void advertising_start(void);
 void configure_buttons(void (*func_ptr)(int32_t button_state, uint32_t has_changed));
+void delete_bonded_devices(void);
 
 #ifdef __cplusplus
 }
