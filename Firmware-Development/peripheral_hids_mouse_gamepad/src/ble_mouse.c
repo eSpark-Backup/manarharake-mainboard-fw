@@ -77,8 +77,8 @@ K_MSGQ_DEFINE(hids_button_queue,
 
 static const struct bt_data ad_mouse[] = {
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
-                (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
-                (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
+                (962 >> 0) & 0xff,
+                (962 >> 8) & 0xff),
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL),
                         BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
@@ -87,6 +87,9 @@ static const struct bt_data ad_mouse[] = {
 static const struct bt_data sd_mouse[] = {
     BT_DATA(BT_DATA_NAME_COMPLETE, MOUSE_DEVICE_NAME, MOUSE_DEVICE_NAME_LEN),
 };
+
+static void mouse_button_handler(struct k_work *work);
+static void mouse_movement_handler(struct k_work *work);
 
 ble_config_t ble_mouse_get_ad_sd_data()
 {
@@ -219,27 +222,120 @@ void ble_mouse_hid_init()
 
 	err = bt_hids_init(&hids_obj_mouse, &hids_init_param);
 	__ASSERT(err == 0, "HIDS initialization failed\n");
+
+	// k_work_init(&hids_work, mouse_movement_handler);
+	// k_work_init(&hids_work_button, mouse_button_handler);
 }
+
+static void mouse_button_send(uint8_t button_mask)
+{
+    for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+        if (!conn_mode[i].conn) continue;
+
+        if (conn_mode[i].in_boot_mode) {
+            // Boot mode: simpler API
+            bt_hids_boot_mouse_inp_rep_send(&hids_obj_mouse,
+                                            conn_mode[i].conn,
+                                            button_mask,
+                                            0, 0,
+                                            NULL);
+            k_msleep(10);
+            bt_hids_boot_mouse_inp_rep_send(&hids_obj_mouse,
+                                            conn_mode[i].conn,
+                                            0, 0, 0,
+                                            NULL);
+        } else {
+            // Report mode: use INPUT_REP_BUTTONS_INDEX
+            uint8_t report[INPUT_REP_BUTTONS_LEN] = {0};
+
+            report[0] = button_mask;  // Buttons (Left, Right, Middle)
+            report[1] = 0x00;         // Padding or reserved
+            report[2] = 0x00;         // Padding or reserved
+
+            bt_hids_inp_rep_send(&hids_obj_mouse,
+                                 conn_mode[i].conn,
+                                 INPUT_REP_BUTTONS_INDEX,
+                                 report,
+                                 INPUT_REP_BUTTONS_LEN,
+                                 NULL);
+
+            k_msleep(10);  // simulate press duration
+
+            report[0] = 0x00;  // release buttons
+            bt_hids_inp_rep_send(&hids_obj_mouse,
+                                 conn_mode[i].conn,
+                                 INPUT_REP_BUTTONS_INDEX,
+                                 report,
+                                 INPUT_REP_BUTTONS_LEN,
+                                 NULL);
+        }
+    }
+}
+
+static void mouse_movement_send(int16_t x_delta, int16_t y_delta)
+{
+	for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+
+		if (!conn_mode[i].conn) {
+			continue;
+		}
+
+		if (conn_mode[i].in_boot_mode) {
+			x_delta = MAX(MIN(x_delta, SCHAR_MAX), SCHAR_MIN);
+			y_delta = MAX(MIN(y_delta, SCHAR_MAX), SCHAR_MIN);
+
+			bt_hids_boot_mouse_inp_rep_send(&hids_obj_mouse,
+							     conn_mode[i].conn,
+							     NULL,
+							     (int8_t) x_delta,
+							     (int8_t) y_delta,
+							     NULL);
+		} else {
+			uint8_t x_buff[2];
+			uint8_t y_buff[2];
+			uint8_t buffer[INPUT_REP_MOVEMENT_LEN];
+
+			int16_t x = MAX(MIN(x_delta, 0x07ff), -0x07ff);
+			int16_t y = MAX(MIN(y_delta, 0x07ff), -0x07ff);
+
+			/* Convert to little-endian. */
+			sys_put_le16(x, x_buff);
+			sys_put_le16(y, y_buff);
+
+			/* Encode report. */
+			BUILD_ASSERT(sizeof(buffer) == 3,
+					 "Only 2 axis, 12-bit each, are supported");
+
+			buffer[0] = x_buff[0];
+			buffer[1] = (y_buff[0] << 4) | (x_buff[1] & 0x0f);
+			buffer[2] = (y_buff[1] << 4) | (y_buff[0] >> 4);
+
+
+			bt_hids_inp_rep_send(&hids_obj_mouse, conn_mode[i].conn,
+						  INPUT_REP_MOVEMENT_INDEX,
+						  buffer, sizeof(buffer), NULL);
+		}
+	}
+}
+
 
 static void mouse_movement_handler(struct k_work *work)
 {
 	struct mouse_pos pos;
-
+	printk("%s called", __FUNCTION__);
 	while (!k_msgq_get(&hids_movement_queue, &pos, K_NO_WAIT)) {
-		ble_mouse_handle_movement(pos.x_val, pos.y_val);
+		mouse_movement_send(pos.x_val, pos.y_val);
 	}
 }
 
 static void mouse_button_handler(struct k_work *work)
 {
 	struct mouse_button sbutton_mask;
-
+	printk("%s called", __FUNCTION__);
 	while (!k_msgq_get(&hids_button_queue, &sbutton_mask, K_NO_WAIT)) {
-		ble_mouse_handle_button(sbutton_mask.button_mask);
+		mouse_button_send(sbutton_mask.button_mask);
 	}
 }
-// k_work_init(&hids_work, mouse_movement_handler);
-// k_work_init(&hids_work_button, mouse_button_handler);
 
 static K_WORK_DEFINE(hids_work, mouse_movement_handler);
 static K_WORK_DEFINE(hids_work_button, mouse_button_handler);

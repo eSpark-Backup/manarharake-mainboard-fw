@@ -171,6 +171,7 @@ int main(void)
 			printk("MANAR_MODE_MOUSE STARTING\n");
 			ble_config_set_ad_sd_data(ble_mouse_get_ad_sd_data());
 			initialize_bluetooth(ble_mouse_return_hids_object());
+			delete_bonded_devices();
 			ble_mouse_hid_init();		
 			configure_buttons(ble_mouse_button_changed);		
 			delete_bonded_devices();
@@ -182,6 +183,7 @@ int main(void)
 			ble_config_set_ad_sd_data(ble_gamepad_get_ad_sd_data());
 			initialize_bluetooth(ble_gamepad_return_hids_object());
 			ble_gamepad_report_init();
+			delete_bonded_devices();
 			ble_gamepad_hid_init();		
 			configure_buttons(ble_gamepad_button_changed);		
 			delete_bonded_devices();
@@ -195,6 +197,12 @@ int main(void)
 
 	while (1) {
 		printk("looping mode %d!\n", manar_mode);
+		if(!conn_mode[0].conn && !piaring_success)
+		{
+			printk("Connection not established or pairing failed!\n");
+			k_sleep(K_SECONDS(1));
+			continue;
+		}
 
 		switch(manar_mode) {
 			case MANAR_MODE_PALM_PCB:
@@ -202,21 +210,15 @@ int main(void)
 			
 			case MANAR_MODE_MOUSE:
 				printk("MANAR_MODE_MOUSE\n");
-				if(conn_mode[0].conn && piaring_success)
-				{
-					ble_mouse_handle_movement(10, 0);
-				}
-				else
-				{
-					printk("No connection established!");
-				}
+				ble_mouse_handle_movement(5, 0);
+				printk("No connection established!");
 				k_sleep(K_SECONDS(1));
-				// bas_notify();
-				// ble_mouse_handle_movement(-10, 0);
-				// k_sleep(K_SECONDS(1));
+				bas_notify();
+				ble_mouse_handle_movement(-10, 0);
+				k_sleep(K_SECONDS(1));
 				break;
-			
-			case MANAR_MODE_GAMEPAD:
+				
+				case MANAR_MODE_GAMEPAD:
 				printk("MANAR_MODE_GAMEPAD\n");
 				ble_gamepad_handle_buttons(0);
 				k_sleep(K_SECONDS(1));
