@@ -123,7 +123,7 @@ void advertising_continue(void)
 		}
 
 		bt_addr_le_to_str(&addr, addr_buf, BT_ADDR_LE_STR_LEN);
-		printk("Direct advertising to %s started\n", addr_buf);
+		printk("advertising_continue: Direct advertising to %s started\n", addr_buf);
 	} else
 #endif
 	{
@@ -225,7 +225,7 @@ void connected(struct bt_conn *conn, uint8_t err)
 
 	if (err) {
 		if (err == BT_HCI_ERR_ADV_TIMEOUT) {
-			printk("Direct advertising to %s timed out\n", addr);
+			printk("connected:Direct advertising to %s timed out\n", addr);
 			k_work_submit(&adv_work);
 		} else {
 			printk("Failed to connect to %s 0x%02x %s\n", addr, err,
@@ -289,9 +289,11 @@ void security_changed(struct bt_conn *conn, bt_security_t level,
 
 	if (!err) {
 		printk("Security changed: %s level %u\n", addr, level);
+		piaring_success = true;
 	} else {
 		printk("Security failed: %s level %u err %d %s\n", addr, level, err,
 		       bt_security_err_to_str(err));
+		piaring_success = false;
 	}
 }
 #endif
@@ -514,7 +516,6 @@ void initialize_bluetooth(void* hids_obj_ptr)
 			return 0;
 		}
 	}
-
 
     err = bt_enable(NULL);
 	if (err) {
