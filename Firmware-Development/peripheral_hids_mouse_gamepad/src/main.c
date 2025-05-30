@@ -12,11 +12,13 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/uart.h>
 #include <soc.h>
 #include <assert.h>
 
 #include <zephyr/bluetooth/controller.h>
 
+#include "uart_config.h"
 #include "bluetooth_config.h"
 #include "ble_gamepad.h"
 #include "ble_mouse.h"
@@ -29,6 +31,8 @@ typedef enum {
 }manar_mode_t;
 
 static manar_mode_t manar_mode __attribute__((section(".non_init")));
+
+void print_uart(char *buf);
 
 void manar_mode_next()
 {
@@ -64,9 +68,23 @@ static void set_bt_addr(const char *addr_str, const char *type_str)
 	}
 }
 
+/*
+ * Print a null-terminated string character by character to the UART interface
+ */
+void print_uart(char *buf)
+{
+	int msg_len = strlen(buf);
+
+	UART_SendData(buf, msg_len);
+}
+
 int main(void)
 {
 	printk("Application Started\n");
+
+	UART_Init();
+
+	print_uart("Uart initialized!\n");
 
 	printk("current Manar mode = %d\n", manar_mode);
 	if(manar_mode > MANAR_MODE_VR)
@@ -119,6 +137,7 @@ int main(void)
 			break;
 	}
 
+	printk("looping mode %d!\n", manar_mode);
 	while (1) {
 
 		/* switch from current mode to next mode every 2 minutes */
@@ -130,7 +149,22 @@ int main(void)
 			NVIC_SystemReset();
 		}
 
-		printk("looping mode %d!\n", manar_mode);
+
+		char rx_data_pv[32];
+		size_t rx_data_len = UART_ReceiveData((uint8_t *)rx_data_pv, 32);
+		if(rx_data_len > 0)
+		{
+			rx_data_pv[rx_data_len] = '\0';
+			printk("Received data: %s\n", rx_data_pv);
+			print_uart(rx_data_pv);
+			print_uart("\n");
+			memset(rx_data_pv, 0, sizeof(rx_data_pv));
+		}
+		else
+		{
+			printk("No data received!\n");
+		}
+		
 		if(manar_mode == MANAR_MODE_GAMEPAD || manar_mode == MANAR_MODE_MOUSE)
 		{
 			if(!conn_mode[0].conn)
