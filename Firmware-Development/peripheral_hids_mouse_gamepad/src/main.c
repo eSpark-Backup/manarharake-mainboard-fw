@@ -22,26 +22,10 @@
 #include "bluetooth_config.h"
 #include "ble_gamepad.h"
 #include "ble_mouse.h"
+#include "mode_controller.h"
 
-typedef enum {
-	MANAR_MODE_MOUSE,
-	MANAR_MODE_GAMEPAD,
-	MANAR_MODE_PALM_PCB,
-	MANAR_MODE_VR,
-}manar_mode_t;
-
-static manar_mode_t manar_mode __attribute__((section(".non_init")));
 
 void print_uart(char *buf);
-
-void manar_mode_next()
-{
-	manar_mode++;
-	if(manar_mode > MANAR_MODE_GAMEPAD)
-	{
-		manar_mode = MANAR_MODE_MOUSE;
-	}
-}
 
 uint32_t millis(void) {
     return k_uptime_get_32();  // Returns milliseconds since boot
@@ -86,25 +70,10 @@ int main(void)
 
 	print_uart("Uart initialized!\n");
 
-	printk("current Manar mode = %d\n", manar_mode);
-	if(manar_mode > MANAR_MODE_VR)
-	{
-		manar_mode = MANAR_MODE_MOUSE;
-	}
-	// k_sleep(K_SECONDS(2));
-	// manar_mode_next();
-	// printk("updated Manar mode = %d\n", manar_mode);
-	// k_sleep(K_SECONDS(2));
-	// NVIC_SystemReset();
-
-	/*currently working on mousepad so using this.*/
-	// manar_mode = MANAR_MODE_GAMEPAD;
-	// manar_mode = MANAR_MODE_MOUSE;
-
-	// bt_set_id_addr()
-
-
-	switch(manar_mode) {
+	int manar_mode_no = manar_mode_init();
+	printk("current Manar mode = %d\n", manar_mode_no);
+	
+	switch(manar_mode_no) {
 		case MANAR_MODE_PALM_PCB:
 			printk("MANAR_MODE_PALM_PCB STARTING\n");
 			break;
@@ -137,18 +106,9 @@ int main(void)
 			break;
 	}
 
-	printk("looping mode %d!\n", manar_mode);
+	printk("looping mode %d!\n", manar_mode_no);
+
 	while (1) {
-
-		/* switch from current mode to next mode every 2 minutes */
-		if(millis() > 1 * 60 * 1000)
-		{
-			manar_mode_next();
-			printk("Switching to mode %d in 5 seconds", manar_mode);
-			k_sleep(K_SECONDS(5));
-			NVIC_SystemReset();
-		}
-
 
 		char rx_data_pv[32];
 		size_t rx_data_len = UART_ReceiveData((uint8_t *)rx_data_pv, 32);
@@ -158,6 +118,7 @@ int main(void)
 			printk("Received data: %s\n", rx_data_pv);
 			print_uart(rx_data_pv);
 			print_uart("\n");
+			process_uart_input(rx_data_pv);
 			memset(rx_data_pv, 0, sizeof(rx_data_pv));
 		}
 		else
@@ -165,7 +126,7 @@ int main(void)
 			printk("No data received!\n");
 		}
 		
-		if(manar_mode == MANAR_MODE_GAMEPAD || manar_mode == MANAR_MODE_MOUSE)
+		if(manar_mode_no == MANAR_MODE_GAMEPAD || manar_mode_no == MANAR_MODE_MOUSE)
 		{
 			if(!conn_mode[0].conn)
 			{
@@ -179,7 +140,7 @@ int main(void)
 			printk("handling non ble mode\n");
 		}
 
-		switch(manar_mode) {
+		switch(manar_mode_no) {
 			case MANAR_MODE_PALM_PCB:
 				printk("MANAR_MODE_PALM_PCB\n");
 				k_sleep(K_SECONDS(1));

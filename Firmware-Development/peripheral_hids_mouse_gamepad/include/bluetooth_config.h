@@ -72,6 +72,7 @@ void delete_bonded_devices(void);
 void hids_pm_evt_handler(enum bt_hids_pm_evt evt,
     struct bt_conn *conn);
 void ble_config_set_ad_sd_data(ble_config_t sd_ad_data);
+bool ble_config_ble_paired(void);
 
 
 #ifdef __cplusplus

@@ -552,6 +552,11 @@ void ble_config_set_ad_sd_data(ble_config_t sd_ad_data)
     sd_len = sd_ad_data.sd_len;
 }
 
+bool ble_config_ble_paired(void)
+{
+	return piaring_success;
+}
+
 #ifdef __cplusplus
 }
 #endif
